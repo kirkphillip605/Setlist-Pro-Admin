@@ -41,10 +41,13 @@ const Login = () => {
 
   const handleGoogleLogin = async () => {
     try {
+      // Use env var or default to current origin
+      const redirectTo = import.meta.env.VITE_AUTH_CALLBACK_URL || window.location.origin;
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: window.location.origin,
+          redirectTo,
         },
       });
       if (error) throw error;

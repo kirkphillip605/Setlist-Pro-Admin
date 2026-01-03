@@ -10,6 +10,8 @@ import AuditLogs from "./pages/AuditLogs";
 import Profiles from "./pages/Profiles";
 import Songs from "./pages/Songs";
 import Gigs from "./pages/Gigs";
+import Setlists from "./pages/Setlists";
+import SetlistDetail from "./pages/SetlistDetail";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -29,8 +31,10 @@ const App = () => (
           <Route path="/songs" element={<AdminRoute><Songs /></AdminRoute>} />
           <Route path="/gigs" element={<AdminRoute><Gigs /></AdminRoute>} />
           
+          <Route path="/setlists" element={<AdminRoute><Setlists /></AdminRoute>} />
+          <Route path="/setlists/:id" element={<AdminRoute><SetlistDetail /></AdminRoute>} />
+          
           {/* Fallback routes */}
-          <Route path="/setlists" element={<AdminRoute><Dashboard /></AdminRoute>} /> {/* Placeholder */}
           <Route path="/app-status" element={<AdminRoute><Dashboard /></AdminRoute>} /> {/* Placeholder */}
           
           <Route path="*" element={<NotFound />} />
