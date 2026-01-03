@@ -22,24 +22,16 @@ const AdminRoute = ({ children }: AdminRouteProps) => {
           return;
         }
 
-        // Check for is_super_admin flag in app_metadata or user_metadata
-        // This matches the user requirement: "Only users where auth.users field 'is_super_admin' is true"
-        // Note: app_metadata is secure and can only be set by Supabase functions/admin API
-        const isSuperAdmin = 
-          session.user.app_metadata?.is_super_admin === true || 
-          session.user.user_metadata?.is_super_admin === true;
+        // Check for is_super_admin flag in the public.profiles table
+        const { data: profile, error } = await supabase
+          .from('profiles')
+          .select('is_super_admin')
+          .eq('id', session.user.id)
+          .single();
 
-        if (!isSuperAdmin) {
-          console.error("Access denied: User is not a super admin");
-          // For now, we might want to redirect to a 'Unauthorized' page, but login is fine
-          // Uncomment this line to enforce the check strict:
-          // navigate("/login"); 
-          // setAuthorized(false);
-          
-          // WARNING: For development purposes if you haven't set the flag yet, you might want to bypass this.
-          // I will enforce it but log it.
-           setAuthorized(true); // TEMPORARILY ALLOW ALL LOGGED IN USERS FOR DEMO until flag is set
-           // setAuthorized(isSuperAdmin);
+        if (error || !profile?.is_super_admin) {
+          console.error("Access denied: User is not a super admin", error);
+          setAuthorized(false);
         } else {
           setAuthorized(true);
         }
@@ -73,7 +65,11 @@ const AdminRoute = ({ children }: AdminRouteProps) => {
     <div className="min-h-screen flex flex-col items-center justify-center p-4 text-center">
       <h1 className="text-2xl font-bold mb-2">Access Denied</h1>
       <p className="text-muted-foreground mb-4">You do not have super admin privileges.</p>
-      <button onClick={() => navigate("/login")} className="text-primary hover:underline">Return to Login</button>
+      <div className="space-y-2">
+        <button onClick={() => navigate("/login")} className="block w-full text-primary hover:underline">
+          Return to Login
+        </button>
+      </div>
     </div>
   );
 };

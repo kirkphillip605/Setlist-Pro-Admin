@@ -51,6 +51,10 @@ export interface Database {
           role: string | null
           is_active: boolean | null
           is_approved: boolean | null
+          has_password: boolean | null
+          preferences: Json | null
+          phone: string | null
+          is_super_admin: boolean | null
         }
       }
       songs: {
