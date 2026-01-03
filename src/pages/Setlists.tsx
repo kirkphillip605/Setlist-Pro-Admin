@@ -22,16 +22,33 @@ const Setlists = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const { data: setlists, isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['setlists'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      // Fetch setlists without the complex join that was causing 400 errors
+      const { data: setlists, error } = await supabase
         .from('setlists')
-        .select('*, profiles!setlists_user_id_fkey(first_name, last_name)')
+        .select('*')
         .order('date', { ascending: false });
       
       if (error) throw error;
-      return data;
+
+      // Fetch profiles manually to map names
+      const userIds = Array.from(new Set(setlists.map(s => s.created_by).filter(Boolean)));
+      
+      let userMap = new Map();
+      if (userIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name')
+          .in('id', userIds);
+          
+        profiles?.forEach(p => {
+          userMap.set(p.id, `${p.first_name || ''} ${p.last_name || ''}`.trim());
+        });
+      }
+
+      return { setlists, userMap };
     }
   });
 
@@ -53,7 +70,7 @@ const Setlists = () => {
     <AdminLayout>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold">Setlists</h1>
-        {/* Placeholder for Create Action - For now we focus on viewing/managing existing */}
+        {/* Placeholder for Create Action */}
         <Button disabled variant="outline"><Plus className="mr-2 h-4 w-4" /> Create Setlist (Coming Soon)</Button>
       </div>
 
@@ -70,14 +87,14 @@ const Setlists = () => {
           <TableBody>
              {isLoading ? (
                <TableRow><TableCell colSpan={4} className="h-24 text-center">Loading...</TableCell></TableRow>
-            ) : setlists?.length === 0 ? (
+            ) : data?.setlists?.length === 0 ? (
                <TableRow><TableCell colSpan={4} className="h-24 text-center">No setlists found.</TableCell></TableRow>
-            ) : setlists?.map((s) => (
+            ) : data?.setlists?.map((s) => (
               <TableRow key={s.id}>
                 <TableCell className="font-medium">{s.name}</TableCell>
                 <TableCell>{s.date}</TableCell>
                 <TableCell>
-                  {s.profiles ? `${s.profiles.first_name || ''} ${s.profiles.last_name || ''}` : 'Unknown'}
+                  {s.created_by ? (data?.userMap?.get(s.created_by) || 'Unknown') : '-'}
                 </TableCell>
                 <TableCell className="flex items-center space-x-2">
                   <Link to={`/setlists/${s.id}`}>

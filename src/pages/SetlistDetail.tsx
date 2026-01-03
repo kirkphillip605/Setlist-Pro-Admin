@@ -6,7 +6,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Clock, Music2 } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
 
 const SetlistDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -17,11 +16,24 @@ const SetlistDetail = () => {
       // Fetch Setlist
       const { data: setlistData, error: setlistError } = await supabase
         .from('setlists')
-        .select('*, profiles!setlists_user_id_fkey(first_name, last_name)')
+        .select('*')
         .eq('id', id!)
         .single();
       
       if (setlistError) throw setlistError;
+
+      // Fetch Creator Name
+      let creatorName = 'Unknown';
+      if (setlistData.created_by) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('first_name, last_name')
+          .eq('id', setlistData.created_by)
+          .single();
+        if (profile) {
+          creatorName = `${profile.first_name || ''} ${profile.last_name || ''}`.trim();
+        }
+      }
 
       // Fetch Sets
       const { data: setsData, error: setsError } = await supabase
@@ -55,6 +67,7 @@ const SetlistDetail = () => {
 
       return {
         ...setlistData,
+        creatorName,
         sets: setsWithSongs
       };
     }
@@ -75,7 +88,7 @@ const SetlistDetail = () => {
             <div className="flex items-center gap-2 mt-2 text-muted-foreground">
               <span>{setlist.date}</span>
               <span>•</span>
-              <span>Created by {setlist.profiles?.first_name} {setlist.profiles?.last_name}</span>
+              <span>Created by {setlist.creatorName}</span>
             </div>
           </div>
           <div className="flex gap-2">
