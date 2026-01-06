@@ -54,6 +54,22 @@ const Profiles = () => {
       return data.users;
     }
   });
+  
+  // Fetch Ban History for selected user
+  const { data: banHistory } = useQuery({
+    queryKey: ['ban-history', selectedUser?.id],
+    queryFn: async () => {
+        if (!selectedUser?.id) return [];
+        const { data, error } = await supabase
+            .from('banned_users')
+            .select('*')
+            .eq('user_id', selectedUser.id)
+            .order('banned_at', { ascending: false });
+        if (error) throw error;
+        return data;
+    },
+    enabled: !!selectedUser?.id && isDetailOpen
+  });
 
   // Combine data
   const combinedUsers = profiles?.map(profile => {
@@ -153,6 +169,7 @@ const Profiles = () => {
     onSuccess: () => {
       toast({ title: "User banned" });
       queryClient.invalidateQueries({ queryKey: ['admin-auth-users'] });
+      queryClient.invalidateQueries({ queryKey: ['ban-history'] });
       setIsDetailOpen(false);
     },
     onError: (err: any) => toast({ variant: "destructive", title: "Ban failed", description: err.message })
@@ -164,6 +181,7 @@ const Profiles = () => {
     onSuccess: () => {
       toast({ title: "User unbanned" });
       queryClient.invalidateQueries({ queryKey: ['admin-auth-users'] });
+      queryClient.invalidateQueries({ queryKey: ['ban-history'] });
       setIsDetailOpen(false);
     },
     onError: (err: any) => toast({ variant: "destructive", title: "Unban failed", description: err.message })
@@ -212,9 +230,13 @@ const Profiles = () => {
         unbanUserMutation.mutate({ userId: selectedUser.id, reason: "Admin manual unban" });
       }
     } else {
-       // Show dialog or just use prompt for reason
-       // For simplicity in this edit, utilizing the state directly within render logic of dialog
+       // logic handled in UI below
     }
+  };
+
+  const openDetail = (user: any) => {
+    setSelectedUser(user);
+    setIsDetailOpen(true);
   };
 
   return (
@@ -300,7 +322,7 @@ const Profiles = () => {
         </Table>
       </div>
 
-      {/* CREATE USER DIALOG (Same as before, abbreviated for brevity in thought, but full code below) */}
+      {/* CREATE USER DIALOG */}
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -437,7 +459,6 @@ const Profiles = () => {
                         <CardTitle className="text-base flex items-center gap-2"><Key className="h-4 w-4"/> Password Reset</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        {/* Password reset form (omitted specific implementation for brevity, same as previous) */}
                          <div className="flex gap-2 items-end">
                             <div className="flex-1 space-y-2">
                                 <Label>New Password</Label>
@@ -516,29 +537,32 @@ const Profiles = () => {
             <TabsContent value="bans" className="flex-1 overflow-y-auto p-6">
                 <div className="space-y-4">
                    <h3 className="font-medium">Ban History</h3>
-                   {selectedUser?.ban_details ? (
-                      <Card>
+                   <div className="space-y-4">
+                     {banHistory?.length === 0 && <p className="text-muted-foreground text-sm">No history found.</p>}
+                     
+                     {banHistory?.map((ban: any) => (
+                       <Card key={ban.id}>
                          <CardContent className="pt-6 space-y-2 text-sm">
-                            <div className="grid grid-cols-3 gap-2 border-b pb-2">
-                               <span className="font-semibold text-muted-foreground">Status</span>
-                               <span className="col-span-2 text-destructive font-bold">ACTIVE BAN</span>
+                            <div className="flex justify-between border-b pb-2 mb-2">
+                               <Badge variant={ban.unbanned_at ? "outline" : "destructive"}>
+                                 {ban.unbanned_at ? "RESOLVED" : "ACTIVE"}
+                               </Badge>
+                               <span className="text-muted-foreground text-xs">{format(new Date(ban.banned_at), "PPP p")}</span>
                             </div>
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-4 gap-2">
                                <span className="font-semibold text-muted-foreground">Reason</span>
-                               <span className="col-span-2">{selectedUser.ban_details.reason}</span>
+                               <span className="col-span-3">{ban.reason}</span>
                             </div>
-                            <div className="grid grid-cols-3 gap-2">
-                               <span className="font-semibold text-muted-foreground">Date</span>
-                               <span className="col-span-2">{format(new Date(selectedUser.ban_details.banned_at), "PPP p")}</span>
-                            </div>
+                            {ban.unbanned_at && (
+                               <div className="mt-2 pt-2 border-t bg-muted/20 p-2 rounded text-xs">
+                                  <p><span className="font-semibold">Unbanned:</span> {format(new Date(ban.unbanned_at), "PPP p")}</p>
+                                  {ban.unbanned_reason && <p><span className="font-semibold">Reason:</span> {ban.unbanned_reason}</p>}
+                               </div>
+                            )}
                          </CardContent>
-                      </Card>
-                   ) : (
-                      <div className="text-center text-muted-foreground py-8">
-                         No active bans found.
-                      </div>
-                   )}
-                   {/* In a real app we would fetch the full history list here */}
+                       </Card>
+                     ))}
+                   </div>
                 </div>
             </TabsContent>
           </Tabs>
@@ -546,11 +570,6 @@ const Profiles = () => {
       </Dialog>
     </AdminLayout>
   );
-};
-
-// Helper for Detail Open
-const openDetail = (user: any) => {
-    // This needs to be inside component or passed down, logic moved inside component above
 };
 
 export default Profiles;

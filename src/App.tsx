@@ -10,7 +10,9 @@ import Dashboard from "./pages/Dashboard";
 import AuditLogs from "./pages/AuditLogs";
 import Profiles from "./pages/Profiles";
 import Songs from "./pages/Songs";
+import SongDetail from "./pages/SongDetail";
 import Gigs from "./pages/Gigs";
+import GigDetail from "./pages/GigDetail";
 import Setlists from "./pages/Setlists";
 import SetlistDetail from "./pages/SetlistDetail";
 import AppStatus from "./pages/AppStatus";
@@ -31,8 +33,12 @@ const App = () => (
             <Route path="/" element={<AdminRoute><Dashboard /></AdminRoute>} />
             <Route path="/audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
             <Route path="/profiles" element={<AdminRoute><Profiles /></AdminRoute>} />
+            
             <Route path="/songs" element={<AdminRoute><Songs /></AdminRoute>} />
+            <Route path="/songs/:id" element={<AdminRoute><SongDetail /></AdminRoute>} />
+            
             <Route path="/gigs" element={<AdminRoute><Gigs /></AdminRoute>} />
+            <Route path="/gigs/:id" element={<AdminRoute><GigDetail /></AdminRoute>} />
             
             <Route path="/setlists" element={<AdminRoute><Setlists /></AdminRoute>} />
             <Route path="/setlists/:id" element={<AdminRoute><SetlistDetail /></AdminRoute>} />
