@@ -36,7 +36,7 @@ const PERSISTED_TABLES = [
 
 const DB_KEY = 'dyad-local-cache-v1';
 
-export const useStore = create<SyncState>((set, get) => ({
+export const useStore = create<SyncState>((set, getStore) => ({ // Rename get to getStore to avoid conflict with idb-keyval get
   profiles: {},
   songs: {},
   gigs: {},
@@ -51,13 +51,13 @@ export const useStore = create<SyncState>((set, get) => ({
   loadingMessage: '',
 
   initialize: async () => {
-    if (get().isInitialized || get().isLoading) return;
+    if (getStore().isInitialized || getStore().isLoading) return;
 
     set({ isLoading: true, loadingProgress: 0, loadingMessage: 'Loading local data...' });
 
     try {
       // 1. Load from IndexedDB
-      const cached = await get(DB_KEY);
+      const cached = await get(DB_KEY) as any; // Cast to any to avoid TS errors on structure
       let currentVersion = 0;
 
       if (cached) {
@@ -81,7 +81,7 @@ export const useStore = create<SyncState>((set, get) => ({
       const newState: any = {};
       // Copy existing state to newState accumulator
       PERSISTED_TABLES.forEach(t => {
-         newState[t] = { ...get()[t as keyof SyncState] as object };
+         newState[t] = { ...getStore()[t as keyof SyncState] as object };
       });
 
       for (const table of PERSISTED_TABLES) {
@@ -148,7 +148,7 @@ export const useStore = create<SyncState>((set, get) => ({
           'postgres_changes',
           { event: '*', schema: 'public' }, 
           (payload) => {
-             get().processRealtimeUpdate(payload);
+             getStore().processRealtimeUpdate(payload);
           }
         )
         .subscribe();
@@ -169,7 +169,7 @@ export const useStore = create<SyncState>((set, get) => ({
     
     if (!PERSISTED_TABLES.includes(table)) return;
 
-    const state = get();
+    const state = getStore();
     // @ts-ignore
     const currentTableMap = state[table] as Record<string, any>;
     const newTableMap = { ...currentTableMap };
@@ -192,7 +192,7 @@ export const useStore = create<SyncState>((set, get) => ({
     const fullStateToSave: any = {};
     PERSISTED_TABLES.forEach(t => {
        // @ts-ignore
-       fullStateToSave[t] = get()[t];
+       fullStateToSave[t] = getStore()[t];
     });
     
     await setItem(DB_KEY, {
