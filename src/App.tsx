@@ -19,6 +19,7 @@ import Setlists from "./pages/Setlists";
 import SetlistDetail from "./pages/SetlistDetail";
 import AppStatus from "./pages/AppStatus";
 import GigSessions from "./pages/GigSessions";
+import Trash from "./pages/Trash";
 import NotFound from "./pages/NotFound";
 import { SyncOverlay } from "@/components/SyncOverlay";
 
@@ -52,6 +53,7 @@ const App = () => (
                 
                 <Route path="/gig-sessions" element={<AdminRoute><GigSessions /></AdminRoute>} />
                 <Route path="/app-status" element={<AdminRoute><AppStatus /></AdminRoute>} />
+                <Route path="/trash" element={<AdminRoute><Trash /></AdminRoute>} />
                 
                 <Route path="*" element={<NotFound />} />
               </Routes>

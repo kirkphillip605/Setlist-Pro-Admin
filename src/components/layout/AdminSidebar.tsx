@@ -9,7 +9,8 @@ import {
   Activity, 
   Smartphone,
   LogOut,
-  Radio
+  Radio,
+  Trash2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,6 +19,7 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { Logo } from "@/components/Logo";
 import { useStore } from "@/lib/store";
 import { SyncStatus } from "@/components/SyncStatus";
+import { useAuth } from "@/components/AuthProvider";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -28,19 +30,21 @@ const menuItems = [
   { icon: ListMusic, label: "Setlists", path: "/setlists" },
   { icon: Smartphone, label: "App Status", path: "/app-status" },
   { icon: Activity, label: "Audit Logs", path: "/audit-logs" },
+  { icon: Trash2, label: "Data Restore", path: "/trash" },
 ];
 
 export const AdminSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const resetStore = useStore(state => state.reset);
+  const { signOut } = useAuth();
 
   const handleLogout = async () => {
     // 1. Clear Local Store & DB
     await resetStore();
     
     // 2. Sign Out Supabase
-    await supabase.auth.signOut();
+    await signOut();
     
     // 3. Redirect
     navigate("/login");
@@ -52,7 +56,7 @@ export const AdminSidebar = () => {
         <Logo />
       </div>
       
-      <nav className="flex-1 px-4 space-y-2 mt-4">
+      <nav className="flex-1 px-4 space-y-2 mt-4 overflow-y-auto">
         {menuItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
@@ -73,7 +77,7 @@ export const AdminSidebar = () => {
         })}
       </nav>
 
-      <div className="p-4 border-t border-sidebar-border space-y-4">
+      <div className="p-4 border-t border-sidebar-border space-y-4 bg-sidebar">
         <SyncStatus />
         
         <div className="space-y-2">
