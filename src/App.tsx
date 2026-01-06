@@ -16,6 +16,7 @@ import GigDetail from "./pages/GigDetail";
 import Setlists from "./pages/Setlists";
 import SetlistDetail from "./pages/SetlistDetail";
 import AppStatus from "./pages/AppStatus";
+import GigSessions from "./pages/GigSessions";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -43,6 +44,7 @@ const App = () => (
             <Route path="/setlists" element={<AdminRoute><Setlists /></AdminRoute>} />
             <Route path="/setlists/:id" element={<AdminRoute><SetlistDetail /></AdminRoute>} />
             
+            <Route path="/gig-sessions" element={<AdminRoute><GigSessions /></AdminRoute>} />
             <Route path="/app-status" element={<AdminRoute><AppStatus /></AdminRoute>} />
             
             <Route path="*" element={<NotFound />} />

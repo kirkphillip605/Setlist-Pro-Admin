@@ -8,7 +8,8 @@ import {
   ListMusic, 
   Activity, 
   Smartphone,
-  LogOut
+  LogOut,
+  Radio
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,6 +19,7 @@ import { Logo } from "@/components/Logo";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
+  { icon: Radio, label: "Live Sessions", path: "/gig-sessions" },
   { icon: Users, label: "Users & Profiles", path: "/profiles" },
   { icon: Music, label: "Songs", path: "/songs" },
   { icon: Mic2, label: "Gigs", path: "/gigs" },
