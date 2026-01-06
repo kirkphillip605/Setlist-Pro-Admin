@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import AdminRoute from "./components/AdminRoute";
 import Login from "./pages/Login";
+import AuthCallback from "./pages/AuthCallback";
 import Dashboard from "./pages/Dashboard";
 import AuditLogs from "./pages/AuditLogs";
 import Profiles from "./pages/Profiles";
@@ -30,6 +31,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             
             <Route path="/" element={<AdminRoute><Dashboard /></AdminRoute>} />
             <Route path="/audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />

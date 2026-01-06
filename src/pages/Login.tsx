@@ -42,7 +42,9 @@ const Login = () => {
 
   const handleGoogleLogin = async () => {
     try {
-      const redirectTo = import.meta.env.VITE_AUTH_CALLBACK_URL || window.location.origin;
+      // Get base URL from env or origin, strip trailing slash if present
+      const baseUrl = (import.meta.env.VITE_AUTH_CALLBACK_URL || window.location.origin).replace(/\/$/, "");
+      const redirectTo = `${baseUrl}/auth/callback`;
       
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
