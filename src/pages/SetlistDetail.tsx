@@ -8,7 +8,17 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
-  ArrowLeft, Clock, Music2, Plus, Trash2, GripVertical, Check, Search, Save
+  ArrowLeft, 
+  Clock, 
+  Music2, 
+  Plus, 
+  Trash2, 
+  ChevronUp, 
+  ChevronDown, 
+  X,
+  Search,
+  Check,
+  GripVertical
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -159,10 +169,9 @@ const SetlistDetail = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  // Realtime
+  // Realtime subscriptions
   useRealtime({ table: 'setlists', queryKey: ['setlist', id], filter: `id=eq.${id}` });
   useRealtime({ table: 'sets', queryKey: ['setlist', id], filter: `setlist_id=eq.${id}` });
-  useRealtime({ table: 'set_songs', queryKey: ['setlist', id] });
 
   // Dnd Sensors
   const sensors = useSensors(
@@ -178,33 +187,34 @@ const SetlistDetail = () => {
   const { data: setlistData, isLoading } = useQuery({
     queryKey: ['setlist', id],
     queryFn: async () => {
-      // 1. Setlist
+      // 1. Fetch Setlist
       const { data: setlist, error: slError } = await supabase.from('setlists').select('*').eq('id', id!).single();
       if (slError) throw slError;
 
-      // 2. Sets
+      // 2. Fetch Sets
       const { data: sets, error: sError } = await supabase.from('sets').select('*').eq('setlist_id', id!).order('position');
       if (sError) throw sError;
 
-      // 3. Set Songs
+      // 3. Fetch Set Songs + Song Details
       const setIds = sets.map(s => s.id);
       let setSongs: any[] = [];
       if (setIds.length > 0) {
         const { data: songs, error: ssError } = await supabase
           .from('set_songs')
-          .select('*, songs(id, title, artist, key, tempo)')
+          .select('*, songs(*)')
           .in('set_id', setIds)
           .order('position');
         if (ssError) throw ssError;
         setSongs = songs;
       }
 
-      // Merge
+      // Merge structure
       const setsWithSongs = sets.map(set => ({
         ...set,
         songs: setSongs.filter(ss => ss.set_id === set.id).sort((a, b) => a.position - b.position)
       }));
 
+      // Set of used song IDs for "Unique Song" check
       const usedSongIds = new Set(setSongs.map(ss => ss.song_id));
 
       return { setlist, sets: setsWithSongs, usedSongIds };
@@ -212,7 +222,7 @@ const SetlistDetail = () => {
   });
 
   const { data: allSongs } = useQuery({
-    queryKey: ['all-songs-picker'],
+    queryKey: ['all-songs-minimal'],
     queryFn: async () => {
       const { data, error } = await supabase.from('songs').select('id, title, artist, key, tempo').order('title');
       if (error) throw error;
@@ -220,20 +230,21 @@ const SetlistDetail = () => {
     }
   });
 
+
   // --- Mutations ---
 
+  // 1. Add Set
   const addSet = useMutation({
     mutationFn: async () => {
+      const nextPos = (setlistData?.sets.length || 0);
       const { data: { user } } = await supabase.auth.getUser();
-      // Use RPC if we wanted robust server-side set appending, but simple insert with current len is mostly safe for sets
-      // Assuming gapless is maintained. For perfect safety, we could create append_set RPC, but append_song is the critical one due to high freq.
-      const position = setlistData?.sets.length || 0;
-      await supabase.from('sets').insert({
+      const { error } = await supabase.from('sets').insert({
         setlist_id: id,
-        name: `Set ${position + 1}`,
-        position,
+        name: `Set ${nextPos + 1}`,
+        position: nextPos,
         created_by: user?.id
       });
+      if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['setlist', id] });
@@ -241,21 +252,18 @@ const SetlistDetail = () => {
     }
   });
 
+  // 2. Delete Set (and reorder)
   const deleteSet = useMutation({
-    mutationFn: async (setId: string) => {
-      // Delete will trigger trigger cascade for songs if configured, but lets assume we need to reorder sets after.
-      // Actually, deleting a set creates a gap. We should reorder remaining sets.
-      // Ideally handled by backend trigger or RPC.
-      // For now, client side optimistic reorder request.
-      await supabase.from('sets').delete().eq('id', setId);
+    mutationFn: async ({ setId, position }: { setId: string, position: number }) => {
+      // Delete target
+      const { error: delError } = await supabase.from('sets').delete().eq('id', setId);
+      if (delError) throw delError;
+
+      // Reorder subsequent sets
+      const setsToUpdate = setlistData?.sets.filter(s => s.position > position) || [];
       
-      // We rely on realtime/refetch to show gap, but to fix gaps:
-      // We'd call reorder_sets with the new list of IDs minus the deleted one.
-      // Let's do that for robustness in onSuccess or just rely on manual reorder later.
-      // Better: Use a simple logic here.
-      const remainingSets = setlistData?.sets.filter(s => s.id !== setId).map(s => s.id) || [];
-      if (remainingSets.length > 0) {
-        await supabase.rpc('reorder_sets', { p_setlist_id: id, p_set_ids: remainingSets });
+      for (const set of setsToUpdate) {
+         await supabase.from('sets').update({ position: set.position - 1 }).eq('id', set.id);
       }
     },
     onSuccess: () => {
@@ -264,41 +272,46 @@ const SetlistDetail = () => {
     }
   });
 
+  // 3. Rename Set
   const renameSet = useMutation({
     mutationFn: async ({ setId, name }: { setId: string, name: string }) => {
-      await supabase.from('sets').update({ name }).eq('id', setId);
+      const { error } = await supabase.from('sets').update({ name }).eq('id', setId);
+      if (error) throw error;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['setlist', id] })
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['setlist', id] });
+    }
   });
 
+  // 4. Add Song to Set
   const addSongToSet = useMutation({
-    mutationFn: async ({ setId, songId }: { setId: string, songId: string }) => {
+    mutationFn: async ({ setId, songId, currentCount }: { setId: string, songId: string, currentCount: number }) => {
       const { data: { user } } = await supabase.auth.getUser();
-      // Use the new RPC to avoid unique constraint violations
-      const { error } = await supabase.rpc('append_song_to_set', {
-        p_set_id: setId,
-        p_song_id: songId,
-        p_created_by: user?.id
+      const { error } = await supabase.from('set_songs').insert({
+        set_id: setId,
+        song_id: songId,
+        position: currentCount,
+        created_by: user?.id
       });
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['setlist', id] });
       toast({ title: "Song added" });
-      setSongSearch(""); // Keep dialog open but maybe clear search? Or keep context?
-      // Keeping dialog open is handled by state not changing to null
     },
     onError: (err: any) => toast({ variant: "destructive", title: "Error", description: err.message })
   });
 
+  // 5. Remove Song from Set (and reorder)
   const removeSong = useMutation({
-    mutationFn: async (itemLink: any) => {
+    mutationFn: async ({ itemLink, setSongs }: { itemLink: any, setSongs: any[] }) => {
+      // Delete
       await supabase.from('set_songs').delete().eq('id', itemLink.id);
-      // Reorder remaining to close gap
-      const currentSet = setlistData?.sets.find(s => s.id === itemLink.set_id);
-      if (currentSet) {
-         const remainingIds = currentSet.songs.filter((s:any) => s.id !== itemLink.id).map((s:any) => s.id);
-         await supabase.rpc('reorder_set_songs', { p_set_id: itemLink.set_id, p_song_ids: remainingIds });
+      
+      // Reorder siblings
+      const siblingsToUpdate = setSongs.filter(s => s.position > itemLink.position);
+      for (const s of siblingsToUpdate) {
+        await supabase.from('set_songs').update({ position: s.position - 1 }).eq('id', s.id);
       }
     },
     onSuccess: () => {
@@ -358,7 +371,6 @@ const SetlistDetail = () => {
        const setId = activeSong.set_id;
        
        // Find the target set from 'over'
-       // If over is a song, its data has 'song'. If over is a set container (maybe?), check data.
        const overData = over.data.current;
        let targetSetId = null;
 
@@ -369,7 +381,6 @@ const SetlistDetail = () => {
        }
 
        // Only allow reordering within same set for this iteration
-       // Moving between sets requires updating set_id which we can support, but let's stick to reorder first.
        if (targetSetId === setId) {
            const set = setlistData?.sets.find(s => s.id === setId);
            if (!set) return;
@@ -442,7 +453,7 @@ const SetlistDetail = () => {
                 <SortableSetItem 
                   key={set.id} 
                   set={set} 
-                  onDelete={(s:any) => { if(confirm(`Delete ${s.name}?`)) deleteSet.mutate(s.id) }}
+                  onDelete={(s:any) => { if(confirm(`Delete ${s.name}?`)) deleteSet.mutate({ setId: s.id, position: s.position }) }}
                   onRename={(id:string, name:string) => renameSet.mutate({setId: id, name})}
                   onAddSong={() => { setActiveSetIdForAdd(set.id); setSongSearch(""); }}
                 >
@@ -456,7 +467,7 @@ const SetlistDetail = () => {
                             key={item.id} 
                             item={item} 
                             index={idx}
-                            onRemove={(i:any) => removeSong.mutate(i)} 
+                            onRemove={(i:any) => removeSong.mutate({ itemLink: i, setSongs: set.songs })} 
                           />
                       ))}
                     </SortableContext>
@@ -523,7 +534,8 @@ const SetlistDetail = () => {
                         )}
                         onClick={() => {
                           if (!isUsed && activeSetIdForAdd) {
-                              addSongToSet.mutate({ setId: activeSetIdForAdd, songId: song.id });
+                              const currentSet = setlistData.sets.find((s:any) => s.id === activeSetIdForAdd);
+                              addSongToSet.mutate({ setId: activeSetIdForAdd, songId: song.id, currentCount: currentSet?.songs?.length || 0 });
                           }
                         }}
                       >
