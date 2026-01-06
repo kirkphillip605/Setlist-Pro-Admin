@@ -29,7 +29,7 @@ const Setlists = () => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("band");
 
-  // Realtime
+  // Realtime (filter out deleted if possible, but easier to just invalidate)
   useRealtime({ table: 'setlists', queryKey: ['setlists'] });
 
   const { data, isLoading } = useQuery({
@@ -37,10 +37,11 @@ const Setlists = () => {
     queryFn: async () => {
       const { data: { user } } = await supabase.auth.getUser();
       
-      // Fetch setlists
+      // Fetch setlists (exclude deleted)
       const { data: setlists, error } = await supabase
         .from('setlists')
         .select('*')
+        .is('deleted_at', null) // Filter active only
         .order('date', { ascending: false });
       
       if (error) throw error;
@@ -69,11 +70,17 @@ const Setlists = () => {
 
   const deleteSetlist = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('setlists').delete().eq('id', id);
+      // Soft Delete
+      const { error } = await supabase
+        .from('setlists')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id);
+      
       if (error) throw error;
     },
     onSuccess: () => {
       toast({ title: "Setlist deleted" });
+      queryClient.invalidateQueries({ queryKey: ['setlists'] });
     },
     onError: (error: any) => {
       toast({ variant: "destructive", title: "Error", description: error.message });
@@ -173,7 +180,7 @@ const Setlists = () => {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete Setlist?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will permanently delete "{s.name}". This action cannot be undone.
+                        This will delete "{s.name}" and all its sets. This action can be undone by an admin.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

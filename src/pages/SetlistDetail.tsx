@@ -191,11 +191,17 @@ const SetlistDetail = () => {
       const { data: setlist, error: slError } = await supabase.from('setlists').select('*').eq('id', id!).single();
       if (slError) throw slError;
 
-      // 2. Fetch Sets
-      const { data: sets, error: sError } = await supabase.from('sets').select('*').eq('setlist_id', id!).order('position');
+      // 2. Fetch Sets (Active Only)
+      const { data: sets, error: sError } = await supabase
+        .from('sets')
+        .select('*')
+        .eq('setlist_id', id!)
+        .is('deleted_at', null)
+        .order('position');
+      
       if (sError) throw sError;
 
-      // 3. Fetch Set Songs + Song Details
+      // 3. Fetch Set Songs + Song Details (Active Only)
       const setIds = sets.map(s => s.id);
       let setSongs: any[] = [];
       if (setIds.length > 0) {
@@ -203,6 +209,7 @@ const SetlistDetail = () => {
           .from('set_songs')
           .select('*, songs(*)')
           .in('set_id', setIds)
+          .is('deleted_at', null)
           .order('position');
         if (ssError) throw ssError;
         setSongs = songs;
@@ -224,7 +231,11 @@ const SetlistDetail = () => {
   const { data: allSongs } = useQuery({
     queryKey: ['all-songs-minimal'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('songs').select('id, title, artist, key, tempo').order('title');
+      const { data, error } = await supabase
+        .from('songs')
+        .select('id, title, artist, key, tempo')
+        .is('deleted_at', null)
+        .order('title');
       if (error) throw error;
       return data;
     }
@@ -252,14 +263,18 @@ const SetlistDetail = () => {
     }
   });
 
-  // 2. Delete Set (and reorder)
+  // 2. Delete Set (Soft Delete and reorder)
   const deleteSet = useMutation({
     mutationFn: async ({ setId, position }: { setId: string, position: number }) => {
-      // Delete target
-      const { error: delError } = await supabase.from('sets').delete().eq('id', setId);
+      // Soft Delete target
+      const { error: delError } = await supabase
+        .from('sets')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', setId);
+      
       if (delError) throw delError;
 
-      // Reorder subsequent sets
+      // Reorder subsequent sets (using local data to identify active sets)
       const setsToUpdate = setlistData?.sets.filter(s => s.position > position) || [];
       
       for (const set of setsToUpdate) {
@@ -302,11 +317,14 @@ const SetlistDetail = () => {
     onError: (err: any) => toast({ variant: "destructive", title: "Error", description: err.message })
   });
 
-  // 5. Remove Song from Set (and reorder)
+  // 5. Remove Song from Set (Soft Delete and reorder)
   const removeSong = useMutation({
     mutationFn: async ({ itemLink, setSongs }: { itemLink: any, setSongs: any[] }) => {
-      // Delete
-      await supabase.from('set_songs').delete().eq('id', itemLink.id);
+      // Soft Delete
+      await supabase
+        .from('set_songs')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', itemLink.id);
       
       // Reorder siblings
       const siblingsToUpdate = setSongs.filter(s => s.position > itemLink.position);
@@ -539,7 +557,7 @@ const SetlistDetail = () => {
                           }
                         }}
                       >
-                        <div className={cn(isUsed && "line-through decoration-muted-foreground decoration-2")}>
+                        <div className="flex flex-col">
                           <p className="font-medium text-sm">{song.title}</p>
                           <p className="text-xs text-muted-foreground">{song.artist}</p>
                         </div>

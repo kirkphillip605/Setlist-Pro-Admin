@@ -42,7 +42,12 @@ const SongDetail = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.from('songs').delete().eq('id', id!);
+      // Soft Delete
+      const { error } = await supabase
+        .from('songs')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id!);
+      
       if (error) throw error;
     },
     onSuccess: () => {

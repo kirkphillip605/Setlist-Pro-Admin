@@ -32,7 +32,12 @@ const Songs = () => {
   const { data: songs, isLoading } = useQuery({
     queryKey: ['songs', searchTerm],
     queryFn: async () => {
-      let query = supabase.from('songs').select('*').order('created_at', { ascending: false });
+      let query = supabase
+        .from('songs')
+        .select('*')
+        .is('deleted_at', null) // Filter active only
+        .order('created_at', { ascending: false });
+      
       if (searchTerm) {
         query = query.ilike('title', `%${searchTerm}%`);
       }

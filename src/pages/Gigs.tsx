@@ -17,7 +17,13 @@ const Gigs = () => {
   const { data: gigs, isLoading } = useQuery({
     queryKey: ['gigs'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('gigs').select('*').order('start_time', { ascending: false }).limit(50);
+      const { data, error } = await supabase
+        .from('gigs')
+        .select('*')
+        .is('deleted_at', null) // Filter active only
+        .order('start_time', { ascending: false })
+        .limit(50);
+      
       if (error) throw error;
       return data;
     }
