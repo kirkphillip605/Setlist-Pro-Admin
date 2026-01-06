@@ -89,7 +89,8 @@ export const useStore = create<SyncState>((set, get) => ({
            if (row.version > maxVersion) maxVersion = row.version;
         });
 
-        newState[table as keyof SyncState] = tableMap;
+        // Use 'any' cast here because TS can't infer that table corresponds only to the Record types of SyncState
+        (newState as any)[table] = tableMap;
         
         loadedTables++;
         set({ loadingProgress: (loadedTables / totalTables) * 100 });
@@ -153,7 +154,7 @@ export const useStore = create<SyncState>((set, get) => ({
        }
     }
 
-    set({ [table as keyof SyncState]: newTableMap });
+    set({ [table as keyof SyncState]: newTableMap } as any);
   }
 }));
 
