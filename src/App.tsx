@@ -13,6 +13,7 @@ import Songs from "./pages/Songs";
 import Gigs from "./pages/Gigs";
 import Setlists from "./pages/Setlists";
 import SetlistDetail from "./pages/SetlistDetail";
+import AppStatus from "./pages/AppStatus";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,8 +37,7 @@ const App = () => (
             <Route path="/setlists" element={<AdminRoute><Setlists /></AdminRoute>} />
             <Route path="/setlists/:id" element={<AdminRoute><SetlistDetail /></AdminRoute>} />
             
-            {/* Fallback routes */}
-            <Route path="/app-status" element={<AdminRoute><Dashboard /></AdminRoute>} />
+            <Route path="/app-status" element={<AdminRoute><AppStatus /></AdminRoute>} />
             
             <Route path="*" element={<NotFound />} />
           </Routes>
