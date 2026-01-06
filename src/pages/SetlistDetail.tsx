@@ -3,7 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,17 +13,17 @@ import {
   Music2, 
   Plus, 
   Trash2, 
-  GripVertical, 
   ChevronUp, 
   ChevronDown, 
-  Save, 
   X,
-  Search
+  Search,
+  Check
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRealtime } from "@/hooks/use-realtime";
+import { cn } from "@/lib/utils";
 
 const SetlistDetail = () => {
   const { id } = useParams<{ id: string }>();
@@ -33,8 +33,6 @@ const SetlistDetail = () => {
   // Realtime subscriptions
   useRealtime({ table: 'setlists', queryKey: ['setlist', id], filter: `id=eq.${id}` });
   useRealtime({ table: 'sets', queryKey: ['setlist', id], filter: `setlist_id=eq.${id}` });
-  // set_songs updates will trigger refetch via invalidate, but for complex nested logic we might rely on manual refetch after mutation for consistency
-  // Ideally, useRealtime should handle it if we filter correctly, but complex relational updates can be race-y.
 
   // --- Data Fetching ---
 
@@ -114,8 +112,6 @@ const SetlistDetail = () => {
       if (delError) throw delError;
 
       // Reorder subsequent sets
-      // We can't do this easily in one query without a stored proc, so we do it client-side logic -> server updates
-      // OR simpler: Fetch all sets > position and decrement.
       const setsToUpdate = setlistData?.sets.filter(s => s.position > position) || [];
       
       for (const set of setsToUpdate) {
@@ -182,11 +178,9 @@ const SetlistDetail = () => {
       const currentIndex = item.position;
       const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
       
-      // Find swap partner
       const partner = allItems.find(i => i.position === targetIndex);
-      if (!partner) return; // Should not happen if UI is correct
+      if (!partner) return;
 
-      // Swap positions
       await supabase.from('set_songs').update({ position: targetIndex }).eq('id', item.id);
       await supabase.from('set_songs').update({ position: currentIndex }).eq('id', partner.id);
     },
@@ -215,11 +209,11 @@ const SetlistDetail = () => {
 
   const filteredSongs = useMemo(() => {
     if (!allSongs) return [];
+    // Show all songs that match search, we handle the "used" state visually in the list
     return allSongs.filter(s => 
-      !setlistData?.usedSongIds.has(s.id) && 
       (s.title.toLowerCase().includes(songSearch.toLowerCase()) || s.artist.toLowerCase().includes(songSearch.toLowerCase()))
     );
-  }, [allSongs, setlistData?.usedSongIds, songSearch]);
+  }, [allSongs, songSearch]);
 
   if (isLoading) return <AdminLayout><div>Loading...</div></AdminLayout>;
   if (!setlistData?.setlist) return <AdminLayout><div>Setlist not found</div></AdminLayout>;
@@ -367,26 +361,41 @@ const SetlistDetail = () => {
                        {filteredSongs.length === 0 ? (
                          <div className="text-center py-8 text-muted-foreground">
                             {songSearch ? "No matching songs found." : "Start typing to search."}
-                            <p className="text-xs mt-1">(Songs already in this setlist are hidden)</p>
                          </div>
                        ) : (
                          <div className="space-y-1 py-2">
-                            {filteredSongs.map(song => (
+                            {filteredSongs.map(song => {
+                               const isUsed = setlistData?.usedSongIds.has(song.id);
+                               return (
                                <button
                                   key={song.id}
-                                  className="w-full flex items-center justify-between p-3 hover:bg-muted/50 rounded-lg text-left group transition-colors"
+                                  disabled={isUsed}
+                                  className={cn(
+                                    "w-full flex items-center justify-between p-3 rounded-lg text-left transition-colors",
+                                    isUsed 
+                                      ? "opacity-50 cursor-not-allowed bg-muted/20" 
+                                      : "hover:bg-muted/50 group"
+                                  )}
                                   onClick={() => {
-                                     addSongToSet.mutate({ setId: set.id, songId: song.id, currentCount: set.songs.length });
-                                     // Don't close immediately to allow multi-add? Or close? Let's keep open for rapid building.
+                                     if (!isUsed) {
+                                         addSongToSet.mutate({ setId: set.id, songId: song.id, currentCount: set.songs.length });
+                                     }
                                   }}
                                >
-                                  <div>
+                                  <div className={cn(isUsed && "line-through decoration-muted-foreground decoration-2")}>
                                      <p className="font-medium text-sm">{song.title}</p>
                                      <p className="text-xs text-muted-foreground">{song.artist}</p>
                                   </div>
-                                  <Plus className="h-4 w-4 opacity-0 group-hover:opacity-100 text-primary" />
+                                  {isUsed ? (
+                                    <div className="flex items-center text-xs text-muted-foreground font-medium bg-muted px-2 py-0.5 rounded-full">
+                                        <Check className="h-3 w-3 mr-1" /> Added
+                                    </div>
+                                  ) : (
+                                    <Plus className="h-4 w-4 opacity-0 group-hover:opacity-100 text-primary" />
+                                  )}
                                </button>
-                            ))}
+                               );
+                            })}
                          </div>
                        )}
                     </ScrollArea>
