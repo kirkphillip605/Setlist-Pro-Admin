@@ -38,7 +38,7 @@ const PERSISTED_TABLES = [
   'set_songs', 
 ];
 
-const DB_KEY = 'dyad-local-cache-v1';
+const DB_KEY = 'setlist-pro-admin-v1';
 
 export const useStore = create<SyncState>((set, getStore) => ({
   profiles: {},
