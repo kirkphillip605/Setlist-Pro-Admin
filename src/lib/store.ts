@@ -1,17 +1,17 @@
 import { create } from 'zustand';
 import { supabase } from '@/integrations/supabase/client';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
+import { get, set as setItem } from 'idb-keyval';
 
 // --- Types ---
 export interface SyncState {
+  // Persisted Tables
   profiles: Record<string, any>;
   songs: Record<string, any>;
   gigs: Record<string, any>;
   setlists: Record<string, any>;
   sets: Record<string, any>;
   set_songs: Record<string, any>;
-  gig_sessions: Record<string, any>;
-  gig_session_participants: Record<string, any>;
   
   // Meta
   lastSyncedVersion: number;
@@ -25,16 +25,16 @@ export interface SyncState {
   processRealtimeUpdate: (payload: RealtimePostgresChangesPayload<any>) => void;
 }
 
-const TABLES_TO_SYNC = [
+const PERSISTED_TABLES = [
   'profiles',
   'songs', 
   'gigs', 
   'setlists', 
   'sets', 
   'set_songs', 
-  'gig_sessions', 
-  'gig_session_participants'
 ];
+
+const DB_KEY = 'dyad-local-cache-v1';
 
 export const useStore = create<SyncState>((set, get) => ({
   profiles: {},
@@ -43,8 +43,6 @@ export const useStore = create<SyncState>((set, get) => ({
   setlists: {},
   sets: {},
   set_songs: {},
-  gig_sessions: {},
-  gig_session_participants: {},
   
   lastSyncedVersion: 0,
   isInitialized: false,
@@ -53,61 +51,99 @@ export const useStore = create<SyncState>((set, get) => ({
   loadingMessage: '',
 
   initialize: async () => {
-    // Prevent double init
     if (get().isInitialized || get().isLoading) return;
 
-    set({ isLoading: true, loadingProgress: 0, loadingMessage: 'Connecting...' });
+    set({ isLoading: true, loadingProgress: 0, loadingMessage: 'Loading local data...' });
 
     try {
-      // 1. Fetch all data initially (Simple "Admin" approach: load everything)
-      // In a more complex app, we'd use IndexedDB and only fetch delta > lastSyncedVersion
-      const totalTables = TABLES_TO_SYNC.length;
-      let loadedTables = 0;
-      let maxVersion = 0;
+      // 1. Load from IndexedDB
+      const cached = await get(DB_KEY);
+      let currentVersion = 0;
 
-      const newState: Partial<SyncState> = {};
+      if (cached) {
+        set({ 
+          ...cached.data, 
+          lastSyncedVersion: cached.lastSyncedVersion || 0 
+        });
+        currentVersion = cached.lastSyncedVersion || 0;
+        console.log("Loaded from cache. Version:", currentVersion);
+      }
 
-      for (const table of TABLES_TO_SYNC) {
-        set({ loadingMessage: `Syncing ${table}...` });
-        
-        // Fetch all active rows (not deleted) for the UI state
-        // We include deleted_at rows in the fetch only if we need to process them, 
-        // but for the cache "state", we usually only want active ones, or we filter later.
-        // Let's store EVERYTHING so we can handle relational integrity if needed, 
-        // but typically we just filter out deleted_at in selectors.
-        
+      // 2. Fetch Deltas from Supabase
+      set({ loadingMessage: 'Checking for updates...' });
+      
+      const totalTables = PERSISTED_TABLES.length;
+      let processedTables = 0;
+      let maxVersionFound = currentVersion;
+      let hasChanges = false;
+
+      // We clone the current state to apply updates
+      const newState: any = {};
+      // Copy existing state to newState accumulator
+      PERSISTED_TABLES.forEach(t => {
+         newState[t] = { ...get()[t as keyof SyncState] as object };
+      });
+
+      for (const table of PERSISTED_TABLES) {
+        // Only fetch rows newer than our local version
+        // We include deleted rows so we can remove them locally
         const { data, error } = await supabase
           .from(table)
-          .select('*'); // Load all
+          .select('*')
+          .gt('version', currentVersion);
 
         if (error) throw error;
 
-        // Convert array to Record<ID, Row>
-        const tableMap: Record<string, any> = {};
-        data?.forEach((row: any) => {
-           tableMap[row.id] = row;
-           if (row.version > maxVersion) maxVersion = row.version;
-        });
-
-        // Use 'any' cast here because TS can't infer that table corresponds only to the Record types of SyncState
-        (newState as any)[table] = tableMap;
+        if (data && data.length > 0) {
+          hasChanges = true;
+          // Apply Deltas
+          data.forEach((row: any) => {
+            if (row.version > maxVersionFound) maxVersionFound = row.version;
+            
+            // If deleted_at is set, remove from local store
+            // Note: In some designs, you keep soft-deletes. 
+            // Here, we remove from the UI-facing store map for cleanliness,
+            // but we might want to keep them if we need to sync them back?
+            // Actually, simply updating the record with the 'deleted_at' field is safer 
+            // so UI can filter them out, rather than deleting the key (which is a hard delete).
+            // Let's store the row as is (with deleted_at) so useItems can filter it.
+            
+            newState[table][row.id] = row;
+          });
+        }
         
-        loadedTables++;
-        set({ loadingProgress: (loadedTables / totalTables) * 100 });
+        processedTables++;
+        set({ loadingProgress: (processedTables / totalTables) * 100 });
       }
 
-      set({ 
-        ...newState, 
-        lastSyncedVersion: maxVersion,
-        isInitialized: true, 
-        isLoading: false,
-        loadingMessage: 'Complete'
-      });
+      // 3. Update State & Persist
+      if (hasChanges) {
+        set({ 
+          ...newState, 
+          lastSyncedVersion: maxVersionFound,
+          isInitialized: true, 
+          isLoading: false, 
+          loadingMessage: 'Sync Complete' 
+        });
+        
+        // Save to IDB
+        await setItem(DB_KEY, {
+          data: newState,
+          lastSyncedVersion: maxVersionFound
+        });
+        console.log("Sync complete. New Version:", maxVersionFound);
+      } else {
+        set({ 
+          isInitialized: true, 
+          isLoading: false, 
+          loadingMessage: 'Up to date' 
+        });
+        console.log("Up to date.");
+      }
 
-      console.log("Initial Sync Complete. Max Version:", maxVersion);
-
-      // 2. Set up Realtime Subscription
-      supabase.channel('global-sync')
+      // 4. Start Realtime Subscription
+      // We subscribe to all changes. When a change comes, we apply it and update IDB.
+      supabase.channel('global-sync-v2')
         .on(
           'postgres_changes',
           { event: '*', schema: 'public' }, 
@@ -119,53 +155,64 @@ export const useStore = create<SyncState>((set, get) => ({
 
     } catch (err) {
       console.error("Sync failed:", err);
-      set({ isLoading: false, loadingMessage: 'Sync failed. Please refresh.' });
+      // Even if sync fails, we mark initialized if we had cache, so app is usable offline
+      set({ 
+        isLoading: false, 
+        isInitialized: true, 
+        loadingMessage: 'Offline Mode' 
+      });
     }
   },
 
   processRealtimeUpdate: async (payload) => {
     const { table, eventType, new: newRecord, old: oldRecord } = payload;
     
-    // Only handle tables we care about
-    if (!TABLES_TO_SYNC.includes(table)) return;
+    if (!PERSISTED_TABLES.includes(table)) return;
 
     const state = get();
-    const currentTableMap = state[table as keyof SyncState] as Record<string, any>;
+    // @ts-ignore
+    const currentTableMap = state[table] as Record<string, any>;
     const newTableMap = { ...currentTableMap };
-    
-    // NOTE: The backend trigger 'handle_row_version' ensures newRecord has the new version.
-    // However, for DELETE events, Supabase only sends 'old' record with ID. 
-    // We implemented "Soft Delete" via UPDATE usually, but if a HARD DELETE happens:
+    let updatedVersion = state.lastSyncedVersion;
     
     if (eventType === 'DELETE') {
-       // Hard delete: remove from store
-       if (oldRecord?.id) {
-         delete newTableMap[oldRecord.id];
-       }
+       // Hard delete from DB -> Hard delete locally
+       if (oldRecord?.id) delete newTableMap[oldRecord.id];
     } else if (newRecord) {
-       // INSERT or UPDATE
-       // If it has a deleted_at, we still keep it in store, but selectors will filter it.
-       // This matches "Server Source of Truth" where the row exists but is marked deleted.
+       // Insert or Update (Soft delete comes here as Update with deleted_at set)
        newTableMap[newRecord.id] = newRecord;
-       
-       // Update max version
-       if (newRecord.version > state.lastSyncedVersion) {
-         set({ lastSyncedVersion: newRecord.version });
-       }
+       if (newRecord.version > updatedVersion) updatedVersion = newRecord.version;
     }
 
-    set({ [table as keyof SyncState]: newTableMap } as any);
+    // Update Store
+    // @ts-ignore
+    set({ [table]: newTableMap, lastSyncedVersion: updatedVersion });
+
+    // Update IDB (Debounce this in prod, but fine for now)
+    const fullStateToSave: any = {};
+    PERSISTED_TABLES.forEach(t => {
+       // @ts-ignore
+       fullStateToSave[t] = get()[t];
+    });
+    
+    await setItem(DB_KEY, {
+      data: fullStateToSave,
+      lastSyncedVersion: updatedVersion
+    });
   }
 }));
 
 // --- Selectors ---
 
 export const useItems = (table: keyof SyncState, includeDeleted = false) => {
+  // @ts-ignore
   const map = useStore(state => state[table] as Record<string, any>);
+  if (!map) return [];
   return Object.values(map).filter(item => includeDeleted || !item.deleted_at);
 };
 
 export const useItem = (table: keyof SyncState, id: string | undefined) => {
+  // @ts-ignore
   const map = useStore(state => state[table] as Record<string, any>);
   return id ? map[id] : undefined;
 };

@@ -16,15 +16,30 @@ import { format, isToday } from "date-fns";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { useItems } from "@/lib/store";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 const Dashboard = () => {
-  // Use local store data - INSTANT ACCESS
+  // Use local store data for static/config data
   const profiles = useItems('profiles');
   const songs = useItems('songs');
   const gigs = useItems('gigs');
   const setlists = useItems('setlists');
-  const sessions = useItems('gig_sessions');
-  const activeSessions = sessions.filter((s:any) => s.is_active);
+
+  // Fetch Live Sessions directly (not cached in local store)
+  const { data: activeSessions = [] } = useQuery({
+    queryKey: ['dashboard-active-sessions'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('gig_sessions')
+        .select('*')
+        .eq('is_active', true);
+      if (error) throw error;
+      return data;
+    },
+    // Refresh frequently or rely on global realtime invalidation if implemented elsewhere
+    refetchInterval: 30000 
+  });
 
   // Derived state (sorting happens on client now, which is fine for < 1000 items)
   const recentSongs = [...songs]
