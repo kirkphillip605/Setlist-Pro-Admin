@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -453,9 +453,8 @@ const AuditLogs = () => {
                 const isExpanded = expandedRows.has(log.id);
 
                 return (
-                  <>
+                  <React.Fragment key={log.id}>
                     <TableRow 
-                      key={log.id} 
                       className={cn(
                         "cursor-pointer hover:bg-muted/50 transition-colors border-l-4", 
                         isExpanded ? "bg-muted/30 border-l-primary" : "border-l-transparent"
@@ -526,7 +525,7 @@ const AuditLogs = () => {
                         </TableCell>
                       </TableRow>
                     )}
-                  </>
+                  </React.Fragment>
                 );
               })
             )}
