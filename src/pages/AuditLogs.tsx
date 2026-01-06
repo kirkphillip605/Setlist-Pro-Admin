@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useStore } from "@/lib/store";
 import {
   Table,
   TableBody,
@@ -23,8 +24,7 @@ import {
   Activity, 
   PauseCircle, 
   PlayCircle,
-  ExternalLink,
-  Info
+  ExternalLink
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -46,13 +46,14 @@ import { cn } from "@/lib/utils";
 
 // --- Types & Helpers ---
 
-const OPERATIONS = ["INSERT", "UPDATE", "DELETE", "REORDER"];
+const OPERATIONS = ["INSERT", "UPDATE", "DELETE", "UNDELETE", "REORDER"];
 const TABLES = ["songs", "gigs", "setlists", "profiles", "app_statuses", "banned_users", "sets", "set_songs"];
 
 const getBadgeColor = (op: string) => {
   switch (op) {
     case 'INSERT': return "bg-green-500/15 text-green-700 dark:text-green-400 hover:bg-green-500/25 border-green-200 dark:border-green-900";
     case 'DELETE': return "bg-red-500/15 text-red-700 dark:text-red-400 hover:bg-red-500/25 border-red-200 dark:border-red-900";
+    case 'UNDELETE': return "bg-teal-500/15 text-teal-700 dark:text-teal-400 hover:bg-teal-500/25 border-teal-200 dark:border-teal-900";
     case 'UPDATE': return "bg-blue-500/15 text-blue-700 dark:text-blue-400 hover:bg-blue-500/25 border-blue-200 dark:border-blue-900";
     case 'REORDER': return "bg-purple-500/15 text-purple-700 dark:text-purple-400 hover:bg-purple-500/25 border-purple-200 dark:border-purple-900";
     default: return "bg-gray-500/15 text-gray-700 dark:text-gray-400 border-gray-200";
@@ -69,22 +70,25 @@ const getLinkForRecord = (table: string, id: string) => {
   }
 };
 
-// --- Components ---
+// Type for the resolution function
+type IdResolver = (id: string) => string | null;
 
-const JsonValue = ({ value, resolvedNames }: { value: any, resolvedNames: Record<string, string> }) => {
-  // If value is a UUID string and we have a name for it, wrap in tooltip
+// --- Sub-components ---
+
+const JsonValue = ({ value, resolve }: { value: any, resolve: IdResolver }) => {
+  // If value is a UUID string, try to resolve it
   if (typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
-    const name = resolvedNames[value];
+    const name = resolve(value);
     if (name) {
       return (
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="cursor-help underline decoration-dotted decoration-muted-foreground/50 underline-offset-4">
-                {value}
+              <span className="cursor-help underline decoration-dotted decoration-muted-foreground/50 underline-offset-4 text-primary/80">
+                {value.slice(0, 8)}...
               </span>
             </TooltipTrigger>
-            <TooltipContent className="bg-popover text-popover-foreground border shadow-md font-medium">
+            <TooltipContent className="bg-popover text-popover-foreground border shadow-md font-medium z-50">
               {name}
             </TooltipContent>
           </Tooltip>
@@ -92,16 +96,21 @@ const JsonValue = ({ value, resolvedNames }: { value: any, resolvedNames: Record
       );
     }
   }
-  return <>{JSON.stringify(value)}</>;
+  // Render generic values
+  if (value === null) return <span className="text-muted-foreground italic">null</span>;
+  if (typeof value === 'boolean') return <span className={value ? "text-green-600" : "text-red-600"}>{String(value)}</span>;
+  return <span>{String(value)}</span>;
 };
 
-const JsonDiff = ({ oldData, newData, resolvedNames }: { oldData: any, newData: any, resolvedNames: Record<string, string> }) => {
+const JsonDiff = ({ oldData, newData, resolve }: { oldData: any, newData: any, resolve: IdResolver }) => {
   if (!oldData && !newData) return <span className="text-muted-foreground">No data recorded</span>;
 
   // Filter out meta keys
-  const ignoredKeys = ['updated_at', 'last_updated_by', 'created_at', 'created_by'];
+  const ignoredKeys = ['updated_at', 'last_updated_by', 'created_at', 'created_by', 'deleted_by', 'version'];
   const allKeys = Array.from(new Set([...Object.keys(oldData || {}), ...Object.keys(newData || {})]))
     .filter(k => !ignoredKeys.includes(k));
+
+  if (allKeys.length === 0) return <div className="text-muted-foreground italic text-sm">No significant changes.</div>;
 
   return (
     <div className="bg-slate-50 dark:bg-slate-950/50 p-4 rounded-md text-xs font-mono overflow-x-auto border">
@@ -126,12 +135,12 @@ const JsonDiff = ({ oldData, newData, resolvedNames }: { oldData: any, newData: 
                 <td className="py-2 pr-4 font-semibold text-foreground/80 align-top">{key}</td>
                 <td className="py-2 pr-4 text-red-600 dark:text-red-400 break-all align-top">
                    <div className="max-h-[100px] overflow-y-auto">
-                      <JsonValue value={oldVal} resolvedNames={resolvedNames} />
+                      <JsonValue value={oldVal} resolve={resolve} />
                    </div>
                 </td>
                 <td className="py-2 text-green-600 dark:text-green-400 break-all align-top">
                    <div className="max-h-[100px] overflow-y-auto">
-                      <JsonValue value={newVal} resolvedNames={resolvedNames} />
+                      <JsonValue value={newVal} resolve={resolve} />
                    </div>
                 </td>
               </tr>
@@ -139,9 +148,6 @@ const JsonDiff = ({ oldData, newData, resolvedNames }: { oldData: any, newData: 
           })}
         </tbody>
       </table>
-      {allKeys.every(k => JSON.stringify(oldData?.[k]) === JSON.stringify(newData?.[k])) && (
-        <div className="text-center text-muted-foreground italic py-2">No functional changes detected in this operation.</div>
-      )}
     </div>
   );
 };
@@ -155,6 +161,39 @@ const AuditLogs = () => {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
   const PAGE_SIZE = 50;
+
+  // Access local store for efficient resolving
+  const { profiles, songs, gigs, setlists, sets } = useStore();
+
+  // Optimized resolver function
+  const resolveRecordName = useCallback((id: string): string | null => {
+    if (!id) return null;
+
+    // 1. Profiles
+    if (profiles[id]) {
+      const p = profiles[id];
+      return `${p.first_name || ''} ${p.last_name || ''}`.trim() || p.email || 'Unknown User';
+    }
+
+    // 2. Songs
+    if (songs[id]) return songs[id].title;
+
+    // 3. Setlists
+    if (setlists[id]) return setlists[id].name;
+
+    // 4. Gigs
+    if (gigs[id]) return gigs[id].name;
+
+    // 5. Sets (Resolve to "Setlist Name • Set Name")
+    if (sets[id]) {
+      const s = sets[id];
+      const sl = setlists[s.setlist_id];
+      return sl ? `${sl.name} • ${s.name}` : s.name;
+    }
+
+    return null;
+  }, [profiles, songs, gigs, setlists, sets]);
+
 
   // --- Realtime Subscription ---
   useEffect(() => {
@@ -204,101 +243,6 @@ const AuditLogs = () => {
     },
     refetchOnWindowFocus: false,
   });
-
-  const { data: resolvedNames } = useQuery({
-    queryKey: ['audit-log-references', logsData?.data],
-    queryFn: async () => {
-      if (!logsData?.data) return {};
-      
-      const lookups: Record<string, string> = {};
-      const songIds = new Set<string>();
-      const gigIds = new Set<string>();
-      const profileIds = new Set<string>();
-      const setlistIds = new Set<string>();
-      const setIds = new Set<string>();
-
-      // Scan logs for IDs
-      const scanPayloadForIds = (payload: any) => {
-        if (!payload) return;
-        if (payload.song_id) songIds.add(payload.song_id);
-        if (payload.gig_id) gigIds.add(payload.gig_id);
-        if (payload.set_id) setIds.add(payload.set_id);
-        if (payload.setlist_id) setlistIds.add(payload.setlist_id);
-        
-        // Profiles
-        ['created_by', 'changed_by', 'last_updated_by', 'user_id', 'leader_id', 'requester_id', 'banned_by', 'unbanned_by', 'deleted_by'].forEach(key => {
-           if (payload[key]) profileIds.add(payload[key]);
-        });
-      };
-
-      logsData.data.forEach(log => {
-        // Main Record IDs based on table
-        if (log.table_name === 'songs') songIds.add(log.record_id!);
-        if (log.table_name === 'gigs') gigIds.add(log.record_id!);
-        if (log.table_name === 'profiles') profileIds.add(log.record_id!);
-        if (log.table_name === 'setlists') setlistIds.add(log.record_id!);
-        if (log.table_name === 'sets') setIds.add(log.record_id!);
-        if (log.table_name === 'set_songs') setIds.add(log.record_id!); // set_songs record_id is the SET id
-        
-        if (log.changed_by) profileIds.add(log.changed_by);
-
-        scanPayloadForIds(log.old_record);
-        scanPayloadForIds(log.new_record);
-      });
-
-      // Fetch Data
-      const promises = [];
-      if (songIds.size > 0) promises.push(supabase.from('songs').select('id, title').in('id', Array.from(songIds)));
-      if (gigIds.size > 0) promises.push(supabase.from('gigs').select('id, name').in('id', Array.from(gigIds)));
-      if (profileIds.size > 0) promises.push(supabase.from('profiles').select('id, first_name, last_name, email').in('id', Array.from(profileIds)));
-      if (setlistIds.size > 0) promises.push(supabase.from('setlists').select('id, name').in('id', Array.from(setlistIds)));
-      if (setIds.size > 0) promises.push(supabase.from('sets').select('id, name, setlist_id').in('id', Array.from(setIds)));
-
-      const results = await Promise.all(promises);
-      
-      const setListIdsFromSets = new Set<string>();
-
-      results.forEach(({ data, error }, idx) => {
-        if (data) {
-          data.forEach((item: any) => {
-            let name = item.title || item.name || item.email;
-            if (item.first_name || item.last_name) name = `${item.first_name || ''} ${item.last_name || ''}`.trim();
-            
-            lookups[item.id] = name;
-
-            // If this is a set, collect its setlist_id for a secondary fetch if we don't have it
-            if (item.setlist_id && !lookups[item.setlist_id] && !setlistIds.has(item.setlist_id)) {
-               setListIdsFromSets.add(item.setlist_id);
-            }
-          });
-        }
-      });
-
-      // Secondary fetch for parent Setlists of Sets (so we can say "Set X in Setlist Y")
-      if (setListIdsFromSets.size > 0) {
-         const { data: slData } = await supabase.from('setlists').select('id, name').in('id', Array.from(setListIdsFromSets));
-         slData?.forEach(sl => {
-            lookups[sl.id] = sl.name;
-         });
-      }
-
-      // Create "Rich Names" for Sets: "Set Name (Setlist Name)"
-      // We do this by iterating sets again now that we have setlist names
-      const setsResult = results.find(r => r.data && r.data.length > 0 && 'setlist_id' in r.data[0]);
-      if (setsResult?.data) {
-         setsResult.data.forEach((set: any) => {
-             const slName = lookups[set.setlist_id];
-             if (slName) {
-                lookups[set.id] = `${slName} • ${set.name}`; // Combined name for better context
-             }
-         });
-      }
-
-      return lookups;
-    },
-    enabled: !!logsData?.data
-  });
-
 
   // --- Event Handlers ---
 
@@ -448,8 +392,8 @@ const AuditLogs = () => {
             ) : (
               logsData?.data?.map((log) => {
                 const link = getLinkForRecord(log.table_name, log.record_id || '');
-                const resolvedName = resolvedNames?.[log.record_id || ''];
-                const changerName = resolvedNames?.[log.changed_by || ''];
+                const resolvedName = resolveRecordName(log.record_id || '');
+                const changerName = resolveRecordName(log.changed_by || '');
                 const isExpanded = expandedRows.has(log.id);
 
                 return (
@@ -480,10 +424,8 @@ const AuditLogs = () => {
                       <TableCell>
                          <div className="flex flex-col">
                             <span className="font-medium text-sm flex items-center gap-2">
-                              {/* Display Name - Logic for Set Songs handled by resolvedName including Setlist name */}
                               {resolvedName || <span className="text-muted-foreground italic text-xs">Deleted or Unknown Record</span>}
                               
-                              {/* Add extra context info for Set Songs if available */}
                               {log.table_name === 'set_songs' && !resolvedName && (
                                 <span className="text-xs text-muted-foreground">(Set Song)</span>
                               )}
@@ -521,7 +463,7 @@ const AuditLogs = () => {
                     {isExpanded && (
                       <TableRow className="hover:bg-transparent bg-muted/10">
                         <TableCell colSpan={6} className="p-4 pl-12">
-                           <JsonDiff oldData={log.old_record} newData={log.new_record} resolvedNames={resolvedNames || {}} />
+                           <JsonDiff oldData={log.old_record} newData={log.new_record} resolve={resolveRecordName} />
                         </TableCell>
                       </TableRow>
                     )}
