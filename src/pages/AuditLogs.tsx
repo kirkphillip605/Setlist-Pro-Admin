@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import AdminLayout from "@/components/layout/AdminLayout";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -23,10 +23,10 @@ import {
   Activity, 
   PauseCircle, 
   PlayCircle,
-  ExternalLink
+  ExternalLink,
+  Info
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -64,14 +64,38 @@ const getLinkForRecord = (table: string, id: string) => {
     case 'songs': return `/songs/${id}`;
     case 'gigs': return `/gigs/${id}`;
     case 'setlists': return `/setlists/${id}`;
-    // case 'profiles': return `/profiles/${id}`; // No direct profile view by ID yet, handled in modal
+    // sets/set_songs link to their setlist parent usually, logic handled in row render
     default: return null;
   }
 };
 
 // --- Components ---
 
-const JsonDiff = ({ oldData, newData }: { oldData: any, newData: any }) => {
+const JsonValue = ({ value, resolvedNames }: { value: any, resolvedNames: Record<string, string> }) => {
+  // If value is a UUID string and we have a name for it, wrap in tooltip
+  if (typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value)) {
+    const name = resolvedNames[value];
+    if (name) {
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="cursor-help underline decoration-dotted decoration-muted-foreground/50 underline-offset-4">
+                {value}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="bg-popover text-popover-foreground border shadow-md font-medium">
+              {name}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
+  }
+  return <>{JSON.stringify(value)}</>;
+};
+
+const JsonDiff = ({ oldData, newData, resolvedNames }: { oldData: any, newData: any, resolvedNames: Record<string, string> }) => {
   if (!oldData && !newData) return <span className="text-muted-foreground">No data recorded</span>;
 
   // Filter out meta keys
@@ -93,7 +117,6 @@ const JsonDiff = ({ oldData, newData }: { oldData: any, newData: any }) => {
           {allKeys.map(key => {
             const oldVal = oldData?.[key];
             const newVal = newData?.[key];
-            // Simple equality check
             const hasChanged = JSON.stringify(oldVal) !== JSON.stringify(newVal);
 
             if (!hasChanged) return null;
@@ -102,10 +125,14 @@ const JsonDiff = ({ oldData, newData }: { oldData: any, newData: any }) => {
               <tr key={key} className="border-b border-muted/40 last:border-0 hover:bg-muted/20">
                 <td className="py-2 pr-4 font-semibold text-foreground/80 align-top">{key}</td>
                 <td className="py-2 pr-4 text-red-600 dark:text-red-400 break-all align-top">
-                   <div className="max-h-[100px] overflow-y-auto">{JSON.stringify(oldVal) || 'null'}</div>
+                   <div className="max-h-[100px] overflow-y-auto">
+                      <JsonValue value={oldVal} resolvedNames={resolvedNames} />
+                   </div>
                 </td>
                 <td className="py-2 text-green-600 dark:text-green-400 break-all align-top">
-                   <div className="max-h-[100px] overflow-y-auto">{JSON.stringify(newVal) || 'null'}</div>
+                   <div className="max-h-[100px] overflow-y-auto">
+                      <JsonValue value={newVal} resolvedNames={resolvedNames} />
+                   </div>
                 </td>
               </tr>
             );
@@ -139,7 +166,6 @@ const AuditLogs = () => {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'audit_logs' },
         (payload) => {
-          // If the new log matches our current filters, update the cache
           const matchesTable = selectedTable === 'all' || payload.new.table_name === selectedTable;
           const matchesOp = selectedOperations.length === 0 || selectedOperations.includes(payload.new.operation);
           
@@ -158,7 +184,6 @@ const AuditLogs = () => {
 
   // --- Data Fetching ---
 
-  // 1. Fetch Logs
   const { data: logsData, isLoading, refetch } = useQuery({
     queryKey: ['audit-logs', page, selectedTable, selectedOperations, recordIdFilter],
     queryFn: async () => {
@@ -167,8 +192,6 @@ const AuditLogs = () => {
         .select('*', { count: 'exact' })
         .order('changed_at', { ascending: false });
       
-      // Pagination logic changes if we are filtering or just paging
-      // For simplicity in this robust view, we range pagination
       query = query.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
       if (selectedTable !== "all") query = query.eq('table_name', selectedTable);
@@ -179,14 +202,9 @@ const AuditLogs = () => {
       if (error) throw error;
       return { data, count };
     },
-    // If live, we rely on invalidation or short polling interval if desired, 
-    // but the subscription above handles invalidation.
-    // We disable auto-refetch on window focus to prevent jarring jumps if streaming.
     refetchOnWindowFocus: false,
   });
 
-  // 2. Fetch Reference Data (Intelligent Linking)
-  // We grab IDs from the fetched logs and look up their names
   const { data: resolvedNames } = useQuery({
     queryKey: ['audit-log-references', logsData?.data],
     queryFn: async () => {
@@ -197,34 +215,84 @@ const AuditLogs = () => {
       const gigIds = new Set<string>();
       const profileIds = new Set<string>();
       const setlistIds = new Set<string>();
+      const setIds = new Set<string>();
+
+      // Scan logs for IDs
+      const scanPayloadForIds = (payload: any) => {
+        if (!payload) return;
+        if (payload.song_id) songIds.add(payload.song_id);
+        if (payload.gig_id) gigIds.add(payload.gig_id);
+        if (payload.set_id) setIds.add(payload.set_id);
+        if (payload.setlist_id) setlistIds.add(payload.setlist_id);
+        
+        // Profiles
+        ['created_by', 'changed_by', 'last_updated_by', 'user_id', 'leader_id', 'requester_id', 'banned_by', 'unbanned_by', 'deleted_by'].forEach(key => {
+           if (payload[key]) profileIds.add(payload[key]);
+        });
+      };
 
       logsData.data.forEach(log => {
+        // Main Record IDs based on table
         if (log.table_name === 'songs') songIds.add(log.record_id!);
         if (log.table_name === 'gigs') gigIds.add(log.record_id!);
         if (log.table_name === 'profiles') profileIds.add(log.record_id!);
         if (log.table_name === 'setlists') setlistIds.add(log.record_id!);
+        if (log.table_name === 'sets') setIds.add(log.record_id!);
+        if (log.table_name === 'set_songs') setIds.add(log.record_id!); // set_songs record_id is the SET id
+        
         if (log.changed_by) profileIds.add(log.changed_by);
+
+        scanPayloadForIds(log.old_record);
+        scanPayloadForIds(log.new_record);
       });
 
-      // Batch fetches
+      // Fetch Data
       const promises = [];
       if (songIds.size > 0) promises.push(supabase.from('songs').select('id, title').in('id', Array.from(songIds)));
       if (gigIds.size > 0) promises.push(supabase.from('gigs').select('id, name').in('id', Array.from(gigIds)));
       if (profileIds.size > 0) promises.push(supabase.from('profiles').select('id, first_name, last_name, email').in('id', Array.from(profileIds)));
       if (setlistIds.size > 0) promises.push(supabase.from('setlists').select('id, name').in('id', Array.from(setlistIds)));
+      if (setIds.size > 0) promises.push(supabase.from('sets').select('id, name, setlist_id').in('id', Array.from(setIds)));
 
       const results = await Promise.all(promises);
       
-      results.forEach(({ data, error }) => {
+      const setListIdsFromSets = new Set<string>();
+
+      results.forEach(({ data, error }, idx) => {
         if (data) {
           data.forEach((item: any) => {
-            // Determine display name based on shape
             let name = item.title || item.name || item.email;
             if (item.first_name || item.last_name) name = `${item.first_name || ''} ${item.last_name || ''}`.trim();
+            
             lookups[item.id] = name;
+
+            // If this is a set, collect its setlist_id for a secondary fetch if we don't have it
+            if (item.setlist_id && !lookups[item.setlist_id] && !setlistIds.has(item.setlist_id)) {
+               setListIdsFromSets.add(item.setlist_id);
+            }
           });
         }
       });
+
+      // Secondary fetch for parent Setlists of Sets (so we can say "Set X in Setlist Y")
+      if (setListIdsFromSets.size > 0) {
+         const { data: slData } = await supabase.from('setlists').select('id, name').in('id', Array.from(setListIdsFromSets));
+         slData?.forEach(sl => {
+            lookups[sl.id] = sl.name;
+         });
+      }
+
+      // Create "Rich Names" for Sets: "Set Name (Setlist Name)"
+      // We do this by iterating sets again now that we have setlist names
+      const setsResult = results.find(r => r.data && r.data.length > 0 && 'setlist_id' in r.data[0]);
+      if (setsResult?.data) {
+         setsResult.data.forEach((set: any) => {
+             const slName = lookups[set.setlist_id];
+             if (slName) {
+                lookups[set.id] = `${slName} • ${set.name}`; // Combined name for better context
+             }
+         });
+      }
 
       return lookups;
     },
@@ -412,8 +480,14 @@ const AuditLogs = () => {
                       <TableCell className="font-medium text-sm text-foreground/80">{log.table_name}</TableCell>
                       <TableCell>
                          <div className="flex flex-col">
-                            <span className="font-medium text-sm">
+                            <span className="font-medium text-sm flex items-center gap-2">
+                              {/* Display Name - Logic for Set Songs handled by resolvedName including Setlist name */}
                               {resolvedName || <span className="text-muted-foreground italic text-xs">Deleted or Unknown Record</span>}
+                              
+                              {/* Add extra context info for Set Songs if available */}
+                              {log.table_name === 'set_songs' && !resolvedName && (
+                                <span className="text-xs text-muted-foreground">(Set Song)</span>
+                              )}
                             </span>
                             <div className="flex items-center gap-2">
                                <span className="text-[10px] font-mono text-muted-foreground">{log.record_id?.slice(0, 8)}...</span>
@@ -448,7 +522,7 @@ const AuditLogs = () => {
                     {isExpanded && (
                       <TableRow className="hover:bg-transparent bg-muted/10">
                         <TableCell colSpan={6} className="p-4 pl-12">
-                           <JsonDiff oldData={log.old_record} newData={log.new_record} />
+                           <JsonDiff oldData={log.old_record} newData={log.new_record} resolvedNames={resolvedNames || {}} />
                         </TableCell>
                       </TableRow>
                     )}
