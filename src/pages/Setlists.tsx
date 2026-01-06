@@ -53,16 +53,18 @@ const Setlists = () => {
       if (userIds.length > 0) {
         const { data: profiles } = await supabase
           .from('profiles')
-          .select('id, first_name, last_name')
+          .select('id, first_name, last_name, email')
           .in('id', userIds);
           
         profiles?.forEach(p => {
-          userMap.set(p.id, `${p.first_name || ''} ${p.last_name || ''}`.trim());
+          const name = `${p.first_name || ''} ${p.last_name || ''}`.trim();
+          userMap.set(p.id, name || p.email || 'Unknown');
         });
       }
 
       const bandSetlists = setlists.filter(s => !s.is_personal);
-      const personalSetlists = setlists.filter(s => s.is_personal && s.created_by === user?.id);
+      // Show ALL personal setlists for admins to manage, not just their own
+      const personalSetlists = setlists.filter(s => s.is_personal);
 
       return { bandSetlists, personalSetlists, userMap, currentUserId: user?.id };
     }
@@ -113,7 +115,7 @@ const Setlists = () => {
             <TableHead>Name</TableHead>
             <TableHead>Date</TableHead>
             {type === 'band' && <TableHead className="w-[100px]">Status</TableHead>}
-            <TableHead>Created By</TableHead>
+            <TableHead>{type === 'personal' ? "Owner" : "Created By"}</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
@@ -153,7 +155,9 @@ const Setlists = () => {
               <TableCell>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                    <User className="h-3.5 w-3.5" />
-                   {s.created_by ? (data?.userMap?.get(s.created_by) || 'Unknown') : '-'}
+                   <span className={cn(type === 'personal' && "font-medium text-foreground")}>
+                     {s.created_by ? (data?.userMap?.get(s.created_by) || 'Unknown') : '-'}
+                   </span>
                 </div>
               </TableCell>
               <TableCell className="flex items-center justify-end space-x-1">
@@ -180,7 +184,7 @@ const Setlists = () => {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete Setlist?</AlertDialogTitle>
                       <AlertDialogDescription>
-                        This will delete "{s.name}" and all its sets. This action can be undone by an admin.
+                        This will delete "{s.name}" and all its sets. This action can be undone from the Trash.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -212,7 +216,7 @@ const Setlists = () => {
       <Tabs defaultValue="band" className="space-y-6" onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-2 lg:w-[400px]">
           <TabsTrigger value="band" className="gap-2"><Users className="h-4 w-4"/> Band Setlists</TabsTrigger>
-          <TabsTrigger value="personal" className="gap-2"><User className="h-4 w-4"/> My Setlists</TabsTrigger>
+          <TabsTrigger value="personal" className="gap-2"><User className="h-4 w-4"/> User Setlists</TabsTrigger>
         </TabsList>
 
         <TabsContent value="band" className="space-y-4">
