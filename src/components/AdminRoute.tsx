@@ -2,26 +2,29 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Loader2 } from "lucide-react";
+import { useAuth } from "@/components/AuthProvider";
 
 interface AdminRouteProps {
   children: React.ReactNode;
 }
 
 const AdminRoute = ({ children }: AdminRouteProps) => {
-  const [loading, setLoading] = useState(true);
+  const { session, loading: authLoading } = useAuth();
   const [authorized, setAuthorized] = useState(false);
+  const [checkingRole, setCheckingRole] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const checkAuth = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (!session) {
-          navigate("/login");
-          return;
-        }
+    // Wait for the AuthProvider to initialize
+    if (authLoading) return;
 
+    if (!session) {
+      navigate("/login");
+      return;
+    }
+
+    const checkRole = async () => {
+      try {
         // Check for is_super_admin flag in the public.profiles table
         const { data: profile, error } = await supabase
           .from('profiles')
@@ -37,23 +40,17 @@ const AdminRoute = ({ children }: AdminRouteProps) => {
         }
 
       } catch (error) {
-        console.error("Auth check failed", error);
+        console.error("Role check failed", error);
         navigate("/login");
       } finally {
-        setLoading(false);
+        setCheckingRole(false);
       }
     };
 
-    checkAuth();
+    checkRole();
+  }, [session, authLoading, navigate]);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) navigate("/login");
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate]);
-
-  if (loading) {
+  if (authLoading || checkingRole) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

@@ -7,4 +7,10 @@ const supabaseKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_DEFAULT_KEY || 
   "placeholder";
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
+  }
+});

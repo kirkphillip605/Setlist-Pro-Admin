@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AuthProvider } from "@/components/AuthProvider";
 import AdminRoute from "./components/AdminRoute";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
@@ -27,34 +28,36 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
       <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <SyncOverlay>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/auth/callback" element={<AuthCallback />} />
-              
-              <Route path="/" element={<AdminRoute><Dashboard /></AdminRoute>} />
-              <Route path="/audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
-              <Route path="/profiles" element={<AdminRoute><Profiles /></AdminRoute>} />
-              
-              <Route path="/songs" element={<AdminRoute><Songs /></AdminRoute>} />
-              <Route path="/songs/:id" element={<AdminRoute><SongDetail /></AdminRoute>} />
-              
-              <Route path="/gigs" element={<AdminRoute><Gigs /></AdminRoute>} />
-              <Route path="/gigs/:id" element={<AdminRoute><GigDetail /></AdminRoute>} />
-              
-              <Route path="/setlists" element={<AdminRoute><Setlists /></AdminRoute>} />
-              <Route path="/setlists/:id" element={<AdminRoute><SetlistDetail /></AdminRoute>} />
-              
-              <Route path="/gig-sessions" element={<AdminRoute><GigSessions /></AdminRoute>} />
-              <Route path="/app-status" element={<AdminRoute><AppStatus /></AdminRoute>} />
-              
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </SyncOverlay>
-        </BrowserRouter>
+        <AuthProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <SyncOverlay>
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
+                
+                <Route path="/" element={<AdminRoute><Dashboard /></AdminRoute>} />
+                <Route path="/audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
+                <Route path="/profiles" element={<AdminRoute><Profiles /></AdminRoute>} />
+                
+                <Route path="/songs" element={<AdminRoute><Songs /></AdminRoute>} />
+                <Route path="/songs/:id" element={<AdminRoute><SongDetail /></AdminRoute>} />
+                
+                <Route path="/gigs" element={<AdminRoute><Gigs /></AdminRoute>} />
+                <Route path="/gigs/:id" element={<AdminRoute><GigDetail /></AdminRoute>} />
+                
+                <Route path="/setlists" element={<AdminRoute><Setlists /></AdminRoute>} />
+                <Route path="/setlists/:id" element={<AdminRoute><SetlistDetail /></AdminRoute>} />
+                
+                <Route path="/gig-sessions" element={<AdminRoute><GigSessions /></AdminRoute>} />
+                <Route path="/app-status" element={<AdminRoute><AppStatus /></AdminRoute>} />
+                
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </SyncOverlay>
+          </BrowserRouter>
+        </AuthProvider>
       </TooltipProvider>
     </ThemeProvider>
   </QueryClientProvider>

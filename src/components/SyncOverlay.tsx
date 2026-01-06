@@ -1,53 +1,27 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, Database } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
+import { useAuth } from "@/components/AuthProvider";
 
 export const SyncOverlay = ({ children }: { children: React.ReactNode }) => {
   const { initialize, isInitialized, isLoading, loadingProgress, loadingMessage } = useStore();
-  const [authChecked, setAuthChecked] = useState(false);
+  const { session, loading: authLoading } = useAuth();
   const location = useLocation();
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (!session) {
-        // If no session, we mark auth as checked and do NOT initialize sync.
-        // This allows the router to render (which will redirect to /login or show public pages)
-        setAuthChecked(true);
-      } else {
-        // If session exists, we initialize the store (which sets isLoading=true)
-        if (!isInitialized) {
-           await initialize();
-        }
-        setAuthChecked(true);
-      }
-    };
-
-    checkAuth();
-
-    // Listen for auth changes to trigger init or reset
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-         initialize();
-      } else if (event === 'SIGNED_OUT') {
-         // Data clearing is handled by the logout button, but good to ensure here just in case?
-         // Actually, calling reset() here might be safer in the layout component 
-         // to avoid race conditions during render.
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [initialize, isInitialized]);
+    // Only attempt to initialize store if auth is done loading and we have a session
+    if (!authLoading && session && !isInitialized) {
+       initialize();
+    }
+  }, [authLoading, session, initialize, isInitialized]);
 
   // Public Routes Check
   const isPublicRoute = location.pathname === '/login' || location.pathname === '/auth/callback';
 
-  // If we haven't checked auth yet, show a minimal spinner (not the full sync overlay)
-  if (!authChecked) {
+  // While AuthProvider is loading initially, show a spinner to prevent flickering
+  if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -55,13 +29,13 @@ export const SyncOverlay = ({ children }: { children: React.ReactNode }) => {
     );
   }
 
-  // If we are on a public route, just render.
-  if (isPublicRoute) {
+  // If we are on a public route, or if we have no session (which will be redirected by AdminRoute), just render children
+  if (isPublicRoute || !session) {
     return <>{children}</>;
   }
 
-  // If authenticated but syncing/loading
-  if (isLoading && !isPublicRoute) {
+  // If authenticated but local store syncing is in progress
+  if (isLoading) {
     return (
       <div className="fixed inset-0 bg-background z-50 flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-sm space-y-6 text-center">
