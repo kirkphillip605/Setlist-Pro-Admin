@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { supabase } from '@/integrations/supabase/client';
 import { RealtimePostgresChangesPayload } from '@supabase/supabase-js';
-import { get, set as setItem } from 'idb-keyval';
+import { get, set as setItem, del } from 'idb-keyval';
 
 // --- Types ---
 export interface SyncState {
@@ -14,14 +14,18 @@ export interface SyncState {
   set_songs: Record<string, any>;
   
   // Meta
+  lastSyncedAt: Date | null;
   lastSyncedVersion: number;
   isInitialized: boolean;
   isLoading: boolean;
   loadingProgress: number;
   loadingMessage: string;
+  isOnline: boolean;
 
   // Actions
   initialize: () => Promise<void>;
+  syncDeltas: () => Promise<void>;
+  reset: () => Promise<void>;
   processRealtimeUpdate: (payload: RealtimePostgresChangesPayload<any>) => void;
 }
 
@@ -36,7 +40,7 @@ const PERSISTED_TABLES = [
 
 const DB_KEY = 'dyad-local-cache-v1';
 
-export const useStore = create<SyncState>((set, getStore) => ({ // Rename get to getStore to avoid conflict with idb-keyval get
+export const useStore = create<SyncState>((set, getStore) => ({
   profiles: {},
   songs: {},
   gigs: {},
@@ -44,49 +48,103 @@ export const useStore = create<SyncState>((set, getStore) => ({ // Rename get to
   sets: {},
   set_songs: {},
   
+  lastSyncedAt: null,
   lastSyncedVersion: 0,
   isInitialized: false,
   isLoading: false,
   loadingProgress: 0,
   loadingMessage: '',
+  isOnline: navigator.onLine,
 
   initialize: async () => {
-    if (getStore().isInitialized || getStore().isLoading) return;
+    if (getStore().isInitialized) return;
 
     set({ isLoading: true, loadingProgress: 0, loadingMessage: 'Loading local data...' });
 
+    // Window online/offline listeners
+    window.addEventListener('online', () => {
+      set({ isOnline: true });
+      getStore().syncDeltas();
+    });
+    window.addEventListener('offline', () => set({ isOnline: false }));
+
+    // Visibility change (re-sync when app comes to foreground)
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === 'visible' && getStore().isOnline) {
+        getStore().syncDeltas();
+      }
+    });
+
     try {
       // 1. Load from IndexedDB
-      const cached = await get(DB_KEY) as any; // Cast to any to avoid TS errors on structure
+      const cached = await get(DB_KEY) as any;
       let currentVersion = 0;
 
       if (cached) {
         set({ 
           ...cached.data, 
-          lastSyncedVersion: cached.lastSyncedVersion || 0 
+          lastSyncedVersion: cached.lastSyncedVersion || 0,
+          lastSyncedAt: cached.lastSyncedAt ? new Date(cached.lastSyncedAt) : null
         });
         currentVersion = cached.lastSyncedVersion || 0;
-        console.log("Loaded from cache. Version:", currentVersion);
       }
 
-      // 2. Fetch Deltas from Supabase
-      set({ loadingMessage: 'Checking for updates...' });
-      
+      // 2. Initial Sync
+      await getStore().syncDeltas();
+
+      set({ isInitialized: true, isLoading: false });
+
+      // 3. Start Realtime Subscription
+      supabase.channel('global-sync-v3')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public' }, 
+          (payload) => {
+             // If we receive a realtime message, we process it AND optionally trigger a delta sync 
+             // if the version gap suggests we missed something.
+             getStore().processRealtimeUpdate(payload);
+          }
+        )
+        .subscribe((status) => {
+           if (status === 'SUBSCRIBED') {
+             console.log('Realtime connected');
+           }
+        });
+
+      // 4. Polling Fallback (every 5 minutes)
+      setInterval(() => {
+        if (getStore().isOnline && !document.hidden) {
+           getStore().syncDeltas();
+        }
+      }, 5 * 60 * 1000);
+
+    } catch (err) {
+      console.error("Init failed:", err);
+      set({ 
+        isLoading: false, 
+        isInitialized: true, // Allow app to render even if offline/failed
+        loadingMessage: 'Offline Mode' 
+      });
+    }
+  },
+
+  syncDeltas: async () => {
+    const currentVersion = getStore().lastSyncedVersion;
+    set({ loadingMessage: 'Checking for updates...', isOnline: true });
+    
+    try {
       const totalTables = PERSISTED_TABLES.length;
       let processedTables = 0;
       let maxVersionFound = currentVersion;
       let hasChanges = false;
-
-      // We clone the current state to apply updates
+      
       const newState: any = {};
-      // Copy existing state to newState accumulator
       PERSISTED_TABLES.forEach(t => {
          newState[t] = { ...getStore()[t as keyof SyncState] as object };
       });
 
       for (const table of PERSISTED_TABLES) {
-        // Only fetch rows newer than our local version
-        // We include deleted rows so we can remove them locally
+        // Fetch only deltas
         const { data, error } = await supabase
           .from(table)
           .select('*')
@@ -96,71 +154,67 @@ export const useStore = create<SyncState>((set, getStore) => ({ // Rename get to
 
         if (data && data.length > 0) {
           hasChanges = true;
-          // Apply Deltas
           data.forEach((row: any) => {
             if (row.version > maxVersionFound) maxVersionFound = row.version;
-            
-            // If deleted_at is set, remove from local store
-            // Note: In some designs, you keep soft-deletes. 
-            // Here, we remove from the UI-facing store map for cleanliness,
-            // but we might want to keep them if we need to sync them back?
-            // Actually, simply updating the record with the 'deleted_at' field is safer 
-            // so UI can filter them out, rather than deleting the key (which is a hard delete).
-            // Let's store the row as is (with deleted_at) so useItems can filter it.
-            
             newState[table][row.id] = row;
           });
         }
         
         processedTables++;
-        set({ loadingProgress: (processedTables / totalTables) * 100 });
+        // Only update progress if we are in the initial loading phase
+        if (getStore().isLoading) {
+           set({ loadingProgress: (processedTables / totalTables) * 100 });
+        }
       }
 
-      // 3. Update State & Persist
+      const now = new Date();
+
       if (hasChanges) {
         set({ 
           ...newState, 
           lastSyncedVersion: maxVersionFound,
-          isInitialized: true, 
-          isLoading: false, 
-          loadingMessage: 'Sync Complete' 
+          lastSyncedAt: now
         });
         
-        // Save to IDB
+        // Persist
         await setItem(DB_KEY, {
           data: newState,
-          lastSyncedVersion: maxVersionFound
+          lastSyncedVersion: maxVersionFound,
+          lastSyncedAt: now.toISOString()
         });
         console.log("Sync complete. New Version:", maxVersionFound);
       } else {
-        set({ 
-          isInitialized: true, 
-          isLoading: false, 
-          loadingMessage: 'Up to date' 
-        });
+        set({ lastSyncedAt: now });
         console.log("Up to date.");
       }
 
-      // 4. Start Realtime Subscription
-      // We subscribe to all changes. When a change comes, we apply it and update IDB.
-      supabase.channel('global-sync-v2')
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public' }, 
-          (payload) => {
-             getStore().processRealtimeUpdate(payload);
-          }
-        )
-        .subscribe();
-
     } catch (err) {
-      console.error("Sync failed:", err);
-      // Even if sync fails, we mark initialized if we had cache, so app is usable offline
-      set({ 
-        isLoading: false, 
-        isInitialized: true, 
-        loadingMessage: 'Offline Mode' 
+      console.error("Delta sync failed:", err);
+      // Don't block UI on background sync fail
+    }
+  },
+
+  reset: async () => {
+    try {
+      // 1. Clear IndexedDB
+      await del(DB_KEY);
+      
+      // 2. Clear State
+      set({
+        profiles: {},
+        songs: {},
+        gigs: {},
+        setlists: {},
+        sets: {},
+        set_songs: {},
+        lastSyncedVersion: 0,
+        lastSyncedAt: null,
+        isInitialized: false
       });
+      
+      console.log("Local data cleared.");
+    } catch (e) {
+      console.error("Failed to clear local data:", e);
     }
   },
 
@@ -176,19 +230,15 @@ export const useStore = create<SyncState>((set, getStore) => ({ // Rename get to
     let updatedVersion = state.lastSyncedVersion;
     
     if (eventType === 'DELETE') {
-       // Hard delete from DB -> Hard delete locally
        if (oldRecord?.id) delete newTableMap[oldRecord.id];
     } else if (newRecord) {
-       // Insert or Update (Soft delete comes here as Update with deleted_at set)
        newTableMap[newRecord.id] = newRecord;
        if (newRecord.version > updatedVersion) updatedVersion = newRecord.version;
     }
 
-    // Update Store
     // @ts-ignore
-    set({ [table]: newTableMap, lastSyncedVersion: updatedVersion });
+    set({ [table]: newTableMap, lastSyncedVersion: updatedVersion, lastSyncedAt: new Date() });
 
-    // Update IDB (Debounce this in prod, but fine for now)
     const fullStateToSave: any = {};
     PERSISTED_TABLES.forEach(t => {
        // @ts-ignore
@@ -197,7 +247,8 @@ export const useStore = create<SyncState>((set, getStore) => ({ // Rename get to
     
     await setItem(DB_KEY, {
       data: fullStateToSave,
-      lastSyncedVersion: updatedVersion
+      lastSyncedVersion: updatedVersion,
+      lastSyncedAt: new Date().toISOString()
     });
   }
 }));

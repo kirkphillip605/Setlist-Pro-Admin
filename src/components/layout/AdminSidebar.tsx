@@ -16,6 +16,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { ModeToggle } from "@/components/mode-toggle";
 import { Logo } from "@/components/Logo";
+import { useStore } from "@/lib/store";
+import { SyncStatus } from "@/components/SyncStatus";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -31,9 +33,16 @@ const menuItems = [
 export const AdminSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const resetStore = useStore(state => state.reset);
 
   const handleLogout = async () => {
+    // 1. Clear Local Store & DB
+    await resetStore();
+    
+    // 2. Sign Out Supabase
     await supabase.auth.signOut();
+    
+    // 3. Redirect
     navigate("/login");
   };
 
@@ -64,16 +73,20 @@ export const AdminSidebar = () => {
         })}
       </nav>
 
-      <div className="p-4 border-t border-sidebar-border space-y-2">
-        <ModeToggle />
-        <Button 
-          variant="ghost" 
-          className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 px-2"
-          onClick={handleLogout}
-        >
-          <LogOut className="h-[1.2rem] w-[1.2rem] mr-2" />
-          Sign Out
-        </Button>
+      <div className="p-4 border-t border-sidebar-border space-y-4">
+        <SyncStatus />
+        
+        <div className="space-y-2">
+          <ModeToggle />
+          <Button 
+            variant="ghost" 
+            className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 px-2"
+            onClick={handleLogout}
+          >
+            <LogOut className="h-[1.2rem] w-[1.2rem] mr-2" />
+            Sign Out
+          </Button>
+        </div>
       </div>
     </div>
   );

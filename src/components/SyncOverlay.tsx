@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 import { Progress } from "@/components/ui/progress";
 import { Loader2, Database } from "lucide-react";
@@ -7,24 +7,61 @@ import { useNavigate, useLocation } from "react-router-dom";
 
 export const SyncOverlay = ({ children }: { children: React.ReactNode }) => {
   const { initialize, isInitialized, isLoading, loadingProgress, loadingMessage } = useStore();
-  const navigate = useNavigate();
+  const [authChecked, setAuthChecked] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
-    // Only init if we have a session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-       if (session && !isInitialized) {
-          initialize();
-       }
+    const checkAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        // If no session, we mark auth as checked and do NOT initialize sync.
+        // This allows the router to render (which will redirect to /login or show public pages)
+        setAuthChecked(true);
+      } else {
+        // If session exists, we initialize the store (which sets isLoading=true)
+        if (!isInitialized) {
+           await initialize();
+        }
+        setAuthChecked(true);
+      }
+    };
+
+    checkAuth();
+
+    // Listen for auth changes to trigger init or reset
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+         initialize();
+      } else if (event === 'SIGNED_OUT') {
+         // Data clearing is handled by the logout button, but good to ensure here just in case?
+         // Actually, calling reset() here might be safer in the layout component 
+         // to avoid race conditions during render.
+      }
     });
+
+    return () => subscription.unsubscribe();
   }, [initialize, isInitialized]);
 
-  // If on public routes, render children immediately
-  if (location.pathname === '/login' || location.pathname === '/auth/callback') {
+  // Public Routes Check
+  const isPublicRoute = location.pathname === '/login' || location.pathname === '/auth/callback';
+
+  // If we haven't checked auth yet, show a minimal spinner (not the full sync overlay)
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // If we are on a public route, just render.
+  if (isPublicRoute) {
     return <>{children}</>;
   }
 
-  if (!isInitialized || isLoading) {
+  // If authenticated but syncing/loading
+  if (isLoading && !isPublicRoute) {
     return (
       <div className="fixed inset-0 bg-background z-50 flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-sm space-y-6 text-center">
