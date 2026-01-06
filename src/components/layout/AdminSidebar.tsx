@@ -13,10 +13,11 @@ import {
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
+import { ModeToggle } from "@/components/mode-toggle";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
-  { icon: Users, label: "Profiles", path: "/profiles" },
+  { icon: Users, label: "Users & Profiles", path: "/profiles" },
   { icon: Music, label: "Songs", path: "/songs" },
   { icon: Mic2, label: "Gigs", path: "/gigs" },
   { icon: ListMusic, label: "Setlists", path: "/setlists" },
@@ -34,9 +35,11 @@ export const AdminSidebar = () => {
   };
 
   return (
-    <div className="h-screen w-64 bg-slate-900 text-white flex flex-col fixed left-0 top-0 border-r border-slate-800">
+    <div className="h-screen w-64 bg-sidebar text-sidebar-foreground flex flex-col fixed left-0 top-0 border-r border-sidebar-border transition-colors duration-300">
       <div className="p-6">
-        <h1 className="text-xl font-bold tracking-wider">ADMIN CONSOLE</h1>
+        <h1 className="text-xl font-bold tracking-wider text-sidebar-primary-foreground bg-sidebar-primary px-3 py-1 rounded-md inline-block">
+          ADMIN
+        </h1>
       </div>
       
       <nav className="flex-1 px-4 space-y-2">
@@ -49,8 +52,8 @@ export const AdminSidebar = () => {
               className={cn(
                 "flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-sm font-medium",
                 isActive 
-                  ? "bg-primary text-primary-foreground" 
-                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground border border-sidebar-border" 
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
               )}
             >
               <item.icon size={20} />
@@ -60,13 +63,14 @@ export const AdminSidebar = () => {
         })}
       </nav>
 
-      <div className="p-4 border-t border-slate-800">
+      <div className="p-4 border-t border-sidebar-border space-y-2">
+        <ModeToggle />
         <Button 
           variant="ghost" 
-          className="w-full justify-start text-slate-400 hover:text-white hover:bg-slate-800"
+          className="w-full justify-start text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 px-2"
           onClick={handleLogout}
         >
-          <LogOut className="mr-2 h-4 w-4" />
+          <LogOut className="h-[1.2rem] w-[1.2rem] mr-2" />
           Sign Out
         </Button>
       </div>

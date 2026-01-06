@@ -2,7 +2,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ThemeProvider } from "@/components/theme-provider";
 import AdminRoute from "./components/AdminRoute";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
@@ -18,29 +19,31 @@ const queryClient = new QueryClient();
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          
-          <Route path="/" element={<AdminRoute><Dashboard /></AdminRoute>} />
-          <Route path="/audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
-          <Route path="/profiles" element={<AdminRoute><Profiles /></AdminRoute>} />
-          <Route path="/songs" element={<AdminRoute><Songs /></AdminRoute>} />
-          <Route path="/gigs" element={<AdminRoute><Gigs /></AdminRoute>} />
-          
-          <Route path="/setlists" element={<AdminRoute><Setlists /></AdminRoute>} />
-          <Route path="/setlists/:id" element={<AdminRoute><SetlistDetail /></AdminRoute>} />
-          
-          {/* Fallback routes */}
-          <Route path="/app-status" element={<AdminRoute><Dashboard /></AdminRoute>} /> {/* Placeholder */}
-          
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
+    <ThemeProvider defaultTheme="dark" storageKey="vite-ui-theme">
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            
+            <Route path="/" element={<AdminRoute><Dashboard /></AdminRoute>} />
+            <Route path="/audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
+            <Route path="/profiles" element={<AdminRoute><Profiles /></AdminRoute>} />
+            <Route path="/songs" element={<AdminRoute><Songs /></AdminRoute>} />
+            <Route path="/gigs" element={<AdminRoute><Gigs /></AdminRoute>} />
+            
+            <Route path="/setlists" element={<AdminRoute><Setlists /></AdminRoute>} />
+            <Route path="/setlists/:id" element={<AdminRoute><SetlistDetail /></AdminRoute>} />
+            
+            {/* Fallback routes */}
+            <Route path="/app-status" element={<AdminRoute><Dashboard /></AdminRoute>} />
+            
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 
