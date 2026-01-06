@@ -19,6 +19,7 @@ import SetlistDetail from "./pages/SetlistDetail";
 import AppStatus from "./pages/AppStatus";
 import GigSessions from "./pages/GigSessions";
 import NotFound from "./pages/NotFound";
+import { SyncOverlay } from "@/components/SyncOverlay";
 
 const queryClient = new QueryClient();
 
@@ -29,28 +30,30 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/auth/callback" element={<AuthCallback />} />
-            
-            <Route path="/" element={<AdminRoute><Dashboard /></AdminRoute>} />
-            <Route path="/audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
-            <Route path="/profiles" element={<AdminRoute><Profiles /></AdminRoute>} />
-            
-            <Route path="/songs" element={<AdminRoute><Songs /></AdminRoute>} />
-            <Route path="/songs/:id" element={<AdminRoute><SongDetail /></AdminRoute>} />
-            
-            <Route path="/gigs" element={<AdminRoute><Gigs /></AdminRoute>} />
-            <Route path="/gigs/:id" element={<AdminRoute><GigDetail /></AdminRoute>} />
-            
-            <Route path="/setlists" element={<AdminRoute><Setlists /></AdminRoute>} />
-            <Route path="/setlists/:id" element={<AdminRoute><SetlistDetail /></AdminRoute>} />
-            
-            <Route path="/gig-sessions" element={<AdminRoute><GigSessions /></AdminRoute>} />
-            <Route path="/app-status" element={<AdminRoute><AppStatus /></AdminRoute>} />
-            
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <SyncOverlay>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
+              
+              <Route path="/" element={<AdminRoute><Dashboard /></AdminRoute>} />
+              <Route path="/audit-logs" element={<AdminRoute><AuditLogs /></AdminRoute>} />
+              <Route path="/profiles" element={<AdminRoute><Profiles /></AdminRoute>} />
+              
+              <Route path="/songs" element={<AdminRoute><Songs /></AdminRoute>} />
+              <Route path="/songs/:id" element={<AdminRoute><SongDetail /></AdminRoute>} />
+              
+              <Route path="/gigs" element={<AdminRoute><Gigs /></AdminRoute>} />
+              <Route path="/gigs/:id" element={<AdminRoute><GigDetail /></AdminRoute>} />
+              
+              <Route path="/setlists" element={<AdminRoute><Setlists /></AdminRoute>} />
+              <Route path="/setlists/:id" element={<AdminRoute><SetlistDetail /></AdminRoute>} />
+              
+              <Route path="/gig-sessions" element={<AdminRoute><GigSessions /></AdminRoute>} />
+              <Route path="/app-status" element={<AdminRoute><AppStatus /></AdminRoute>} />
+              
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </SyncOverlay>
         </BrowserRouter>
       </TooltipProvider>
     </ThemeProvider>
