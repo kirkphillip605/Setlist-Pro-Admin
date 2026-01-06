@@ -17,6 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Loader2, Plus, RefreshCw, Trash2, Shield, Key, LogOut, Unlink, UserCog, Mail, Ban, CheckCircle } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { format } from "date-fns";
+import { useRealtime } from "@/hooks/use-realtime";
 
 // Helper to call our edge function
 const callAdminApi = async (action: string, payload: any = {}) => {
@@ -35,6 +36,10 @@ const Profiles = () => {
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [banReason, setBanReason] = useState("");
+
+  // Realtime
+  useRealtime({ table: 'profiles', queryKey: ['profiles'] });
+  useRealtime({ table: 'banned_users', queryKey: ['profiles'] });
 
   // --- Queries ---
 
@@ -130,7 +135,7 @@ const Profiles = () => {
     onSuccess: () => {
       toast({ title: "User updated successfully" });
       setIsDetailOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      // Realtime catches profile updates, but auth updates need manual refetch
       queryClient.invalidateQueries({ queryKey: ['admin-auth-users'] });
     },
     onError: (err: any) => toast({ variant: "destructive", title: "Update failed", description: err.message })
@@ -147,7 +152,6 @@ const Profiles = () => {
     onSuccess: () => {
       toast({ title: "User soft-deleted" });
       setIsDetailOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['profiles'] });
       queryClient.invalidateQueries({ queryKey: ['admin-auth-users'] });
     },
     onError: (err: any) => toast({ variant: "destructive", title: "Delete failed", description: err.message })
@@ -169,7 +173,6 @@ const Profiles = () => {
     onSuccess: () => {
       toast({ title: "User banned" });
       queryClient.invalidateQueries({ queryKey: ['admin-auth-users'] });
-      queryClient.invalidateQueries({ queryKey: ['ban-history'] });
       setIsDetailOpen(false);
     },
     onError: (err: any) => toast({ variant: "destructive", title: "Ban failed", description: err.message })
@@ -181,7 +184,6 @@ const Profiles = () => {
     onSuccess: () => {
       toast({ title: "User unbanned" });
       queryClient.invalidateQueries({ queryKey: ['admin-auth-users'] });
-      queryClient.invalidateQueries({ queryKey: ['ban-history'] });
       setIsDetailOpen(false);
     },
     onError: (err: any) => toast({ variant: "destructive", title: "Unban failed", description: err.message })
@@ -256,9 +258,9 @@ const Profiles = () => {
         </div>
       </div>
 
-      <div className="rounded-md border bg-card card-shadow overflow-hidden">
+      <div className="rounded-lg border bg-card shadow-sm overflow-hidden">
         <Table>
-          <TableHeader className="bg-muted/50">
+          <TableHeader className="bg-muted/40">
             <TableRow>
               <TableHead>User</TableHead>
               <TableHead>Role</TableHead>
@@ -269,11 +271,11 @@ const Profiles = () => {
           </TableHeader>
           <TableBody>
             {isProfilesLoading || isAuthLoading ? (
-               <TableRow><TableCell colSpan={5} className="h-24 text-center">Loading users...</TableCell></TableRow>
+               <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">Loading users...</TableCell></TableRow>
             ) : combinedUsers.map((user) => (
               <TableRow 
                 key={user.id} 
-                className={`hover:bg-muted/50 cursor-pointer ${user.deleted_at ? 'opacity-50 grayscale' : ''}`} 
+                className={`hover:bg-muted/50 cursor-pointer transition-colors ${user.deleted_at ? 'opacity-50 grayscale' : ''}`} 
                 onClick={() => openDetail(user)}
               >
                 <TableCell>
@@ -291,24 +293,24 @@ const Profiles = () => {
                     </div>
                 </TableCell>
                 <TableCell>
-                    <div className="flex flex-col gap-1">
-                        <Badge variant="outline" className="w-fit">{user.role}</Badge>
-                        {user.is_super_admin && <Badge className="w-fit bg-primary text-primary-foreground">Super Admin</Badge>}
+                    <div className="flex flex-col gap-1 items-start">
+                        <Badge variant="outline" className="font-normal">{user.role}</Badge>
+                        {user.is_super_admin && <Badge className="bg-amber-500 text-white border-amber-500 hover:bg-amber-600">Super Admin</Badge>}
                     </div>
                 </TableCell>
                 <TableCell>
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 flex-wrap">
                         {user.auth?.identities?.map((id: any) => (
-                            <Badge key={id.id} variant="secondary" className="capitalize">{id.provider}</Badge>
+                            <Badge key={id.id} variant="secondary" className="capitalize text-[10px]">{id.provider}</Badge>
                         ))}
                         {!user.auth && <span className="text-muted-foreground text-sm">-</span>}
                     </div>
                 </TableCell>
                 <TableCell>
                   {user.is_banned ? (
-                    <Badge variant="destructive">BANNED</Badge>
+                    <Badge variant="destructive" className="flex w-fit items-center gap-1"><Ban className="h-3 w-3"/> BANNED</Badge>
                   ) : (
-                    <Badge variant={user.is_active ? "default" : "secondary"}>
+                    <Badge variant={user.is_active ? "default" : "secondary"} className={user.is_active ? "bg-green-600 hover:bg-green-700" : ""}>
                       {user.is_active ? 'Active' : 'Inactive'}
                     </Badge>
                   )}
@@ -380,7 +382,7 @@ const Profiles = () => {
                 <div>
                    <DialogTitle className="text-2xl flex items-center gap-2">
                        {selectedUser?.first_name} {selectedUser?.last_name}
-                       {selectedUser?.is_super_admin && <Shield className="h-5 w-5 text-primary" />}
+                       {selectedUser?.is_super_admin && <Shield className="h-5 w-5 text-amber-500" />}
                        {selectedUser?.deleted_at && <span className="text-destructive text-sm border border-destructive px-2 py-0.5 rounded">DELETED</span>}
                    </DialogTitle>
                    <DialogDescription>{selectedUser?.email}</DialogDescription>
@@ -434,16 +436,16 @@ const Profiles = () => {
                     </div>
 
                     <div className="space-y-4 pt-4 border-t">
-                        <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                        <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm bg-card">
                             <div className="space-y-0.5">
                                 <Label>Active Status</Label>
                                 <div className="text-xs text-muted-foreground">Disable to prevent login (Soft disable)</div>
                             </div>
                             <Switch name="is_active" defaultChecked={selectedUser?.is_active} />
                         </div>
-                        <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm">
+                        <div className="flex items-center justify-between rounded-lg border p-3 shadow-sm bg-card">
                             <div className="space-y-0.5">
-                                <Label className="text-primary font-bold">Super Admin Access</Label>
+                                <Label className="text-amber-600 font-bold flex items-center gap-1"><Shield className="h-3 w-3"/> Super Admin Access</Label>
                                 <div className="text-xs text-muted-foreground">Grants full access to this console</div>
                             </div>
                             <Switch name="is_super_admin" defaultChecked={selectedUser?.is_super_admin} />
