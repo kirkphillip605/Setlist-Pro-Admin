@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
+import { Logo } from "@/components/Logo";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -41,7 +42,6 @@ const Login = () => {
 
   const handleGoogleLogin = async () => {
     try {
-      // Use env var or default to current origin
       const redirectTo = import.meta.env.VITE_AUTH_CALLBACK_URL || window.location.origin;
       
       const { error } = await supabase.auth.signInWithOAuth({
@@ -63,11 +63,14 @@ const Login = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
       <Card className="w-full max-w-md">
-        <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold text-center">Admin Console</CardTitle>
-          <CardDescription className="text-center">
-            Enter your credentials to access the dashboard
-          </CardDescription>
+        <CardHeader className="space-y-4 flex flex-col items-center">
+          <Logo className="h-12 w-48 mb-2" />
+          <div className="text-center space-y-1">
+            <CardTitle className="text-2xl font-bold">Admin Console</CardTitle>
+            <CardDescription>
+              Enter your credentials to access the dashboard
+            </CardDescription>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <form onSubmit={handleLogin} className="space-y-4">

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { ModeToggle } from "@/components/mode-toggle";
+import { Logo } from "@/components/Logo";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/" },
@@ -36,13 +37,11 @@ export const AdminSidebar = () => {
 
   return (
     <div className="h-screen w-64 bg-sidebar text-sidebar-foreground flex flex-col fixed left-0 top-0 border-r border-sidebar-border transition-colors duration-300">
-      <div className="p-6">
-        <h1 className="text-xl font-bold tracking-wider text-sidebar-primary-foreground bg-sidebar-primary px-3 py-1 rounded-md inline-block">
-          ADMIN
-        </h1>
+      <div className="p-6 h-16 flex items-center">
+        <Logo />
       </div>
       
-      <nav className="flex-1 px-4 space-y-2">
+      <nav className="flex-1 px-4 space-y-2 mt-4">
         {menuItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
