@@ -56,13 +56,13 @@ const SongDetail = () => {
     e.preventDefault();
     const formData = new FormData(e.target as HTMLFormElement);
     
+    // We do NOT include spotify_url or cover_url here as they are read-only from import
     updateMutation.mutate({
       title: formData.get('title'),
       artist: formData.get('artist'),
       key: formData.get('key'),
       tempo: formData.get('tempo'),
       duration: formData.get('duration'),
-      spotify_url: formData.get('spotify_url'),
       lyrics: formData.get('lyrics'),
       note: formData.get('note'),
     });
@@ -126,17 +126,17 @@ const SongDetail = () => {
                 <Label>Duration</Label>
                 <Input name="duration" defaultValue={song.duration || ''} placeholder="e.g. 3:45" />
               </div>
-              <div className="space-y-2">
-                <Label>Spotify URL</Label>
-                <div className="flex gap-2">
-                   <Input name="spotify_url" defaultValue={song.spotify_url || ''} className="font-mono text-xs" />
-                   {song.spotify_url && (
-                     <Button type="button" variant="outline" size="icon" asChild>
-                       <a href={song.spotify_url} target="_blank" rel="noreferrer"><ExternalLink className="h-4 w-4"/></a>
-                     </Button>
-                   )}
+              
+              {song.spotify_url && (
+                <div className="space-y-2 pt-2">
+                  <Label>Spotify</Label>
+                  <Button type="button" variant="outline" className="w-full gap-2" asChild>
+                    <a href={song.spotify_url} target="_blank" rel="noreferrer">
+                      <ExternalLink className="h-4 w-4"/> Open in Spotify
+                    </a>
+                  </Button>
                 </div>
-              </div>
+              )}
             </CardContent>
           </Card>
           
