@@ -18,7 +18,8 @@ import {
   X,
   Search,
   Check,
-  GripVertical
+  GripVertical,
+  FileDown
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -45,6 +46,7 @@ import {
   useSortable
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import jsPDF from 'jspdf';
 
 // --- Sortable Components ---
 
@@ -414,6 +416,109 @@ const SetlistDetail = () => {
     }
   };
 
+  // --- PDF Generation ---
+  const generatePDF = () => {
+    if (!setlistData) return;
+
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4"
+    });
+
+    // A4 dimensions: 210mm x 297mm
+    const pageWidth = 210;
+    const pageHeight = 297;
+    const margin = 20;
+    const contentWidth = pageWidth - (margin * 2);
+    const contentHeight = pageHeight - (margin * 2);
+    
+    // Header/Footer allowance
+    const headerHeight = 25; 
+    const footerHeight = 15;
+    const availableBodyHeight = contentHeight - headerHeight - footerHeight;
+
+    setlistData.sets.forEach((set: any, index: number) => {
+      // Add page for subsequent sets
+      if (index > 0) doc.addPage();
+
+      // --- Header ---
+      doc.setFontSize(24);
+      doc.setFont("helvetica", "bold");
+      doc.text(set.name, margin, margin + 10);
+
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100);
+      doc.text(`${setlistData.setlist.name} • ${setlistData.setlist.date}`, margin, margin + 18);
+      doc.setTextColor(0); // Reset color
+
+      // --- Footer ---
+      doc.setFontSize(9);
+      doc.setTextColor(150);
+      doc.text(`Page ${index + 1} of ${setlistData.sets.length}`, pageWidth / 2, pageHeight - 10, { align: "center" });
+      doc.setTextColor(0);
+
+      // --- Songs Content ---
+      if (set.songs.length === 0) {
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "italic");
+        doc.setTextColor(150);
+        doc.text("No songs in this set.", margin, margin + headerHeight + 10);
+      } else {
+        // Calculate dynamic spacing
+        // We divide available height by number of songs to get the "slot" height for each song
+        // We cap the slot height so few songs don't look ridiculous (e.g. 1 song in middle of page)
+        const calculatedSlotHeight = availableBodyHeight / set.songs.length;
+        const maxSlotHeight = 50; // Don't spread more than this per song
+        const slotHeight = Math.min(calculatedSlotHeight, maxSlotHeight);
+        
+        const startY = margin + headerHeight;
+
+        set.songs.forEach((item: any, songIndex: number) => {
+          const song = item.songs;
+          const currentY = startY + (songIndex * slotHeight);
+
+          // Song Title
+          doc.setFontSize(18);
+          doc.setFont("helvetica", "bold");
+          const title = `${songIndex + 1}. ${song.title}`;
+          doc.text(title, margin, currentY + 10);
+
+          // Meta Info (Key / Tempo) - Right Aligned
+          const metaInfo = [];
+          if (song.key) metaInfo.push(`Key: ${song.key}`);
+          if (song.tempo) metaInfo.push(`${song.tempo} BPM`);
+          
+          if (metaInfo.length > 0) {
+             doc.setFontSize(12);
+             doc.setFont("helvetica", "normal");
+             doc.text(metaInfo.join("  •  "), pageWidth - margin, currentY + 10, { align: "right" });
+          }
+
+          // Artist
+          doc.setFontSize(12);
+          doc.setFont("helvetica", "italic");
+          doc.setTextColor(60);
+          doc.text(song.artist, margin + 8, currentY + 17);
+
+          // Note
+          if (song.note) {
+             doc.setFontSize(10);
+             doc.setTextColor(100);
+             // handle note wrapping if too long
+             const splitNote = doc.splitTextToSize(`Note: ${song.note}`, contentWidth - 10);
+             doc.text(splitNote, margin + 8, currentY + 23);
+          }
+          
+          doc.setTextColor(0); // Reset
+        });
+      }
+    });
+
+    doc.save(`${setlistData.setlist.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`);
+  };
+
   // --- UI State ---
   const [songSearch, setSongSearch] = useState("");
   const [activeSetIdForAdd, setActiveSetIdForAdd] = useState<string | null>(null);
@@ -450,9 +555,14 @@ const SetlistDetail = () => {
                 <span className="flex items-center gap-1"><Clock className="h-3 w-3"/> {setlistData.setlist.date}</span>
               </div>
             </div>
-            <Button onClick={() => addSet.mutate()}>
-              <Plus className="mr-2 h-4 w-4" /> Add Set
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={generatePDF}>
+                <FileDown className="mr-2 h-4 w-4" /> Download PDF
+              </Button>
+              <Button onClick={() => addSet.mutate()}>
+                <Plus className="mr-2 h-4 w-4" /> Add Set
+              </Button>
+            </div>
           </div>
         </div>
 
