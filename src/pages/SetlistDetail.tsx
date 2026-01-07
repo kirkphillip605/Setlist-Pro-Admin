@@ -7,14 +7,14 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { 
   ArrowLeft, 
   Clock, 
   Music2, 
   Plus, 
   Trash2, 
-  ChevronUp, 
-  ChevronDown, 
   X,
   Search,
   Check,
@@ -22,7 +22,7 @@ import {
   FileDown
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRealtime } from "@/hooks/use-realtime";
 import { cn } from "@/lib/utils";
@@ -183,6 +183,15 @@ const SetlistDetail = () => {
 
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const [activeDragItem, setActiveDragItem] = useState<any>(null);
+
+  // PDF Configuration State
+  const [pdfConfigOpen, setPdfConfigOpen] = useState(false);
+  const [pdfOptions, setPdfOptions] = useState({
+    showArtist: true,
+    showKey: true,
+    showTempo: true,
+    showNotes: true
+  });
 
   // --- Data Fetching ---
 
@@ -467,10 +476,8 @@ const SetlistDetail = () => {
         doc.text("No songs in this set.", margin, margin + headerHeight + 10);
       } else {
         // Calculate dynamic spacing
-        // We divide available height by number of songs to get the "slot" height for each song
-        // We cap the slot height so few songs don't look ridiculous (e.g. 1 song in middle of page)
         const calculatedSlotHeight = availableBodyHeight / set.songs.length;
-        const maxSlotHeight = 50; // Don't spread more than this per song
+        const maxSlotHeight = 50; 
         const slotHeight = Math.min(calculatedSlotHeight, maxSlotHeight);
         
         const startY = margin + headerHeight;
@@ -479,44 +486,49 @@ const SetlistDetail = () => {
           const song = item.songs;
           const currentY = startY + (songIndex * slotHeight);
 
-          // Song Title
+          // 1. Song Title
           doc.setFontSize(18);
           doc.setFont("helvetica", "bold");
           const title = `${songIndex + 1}. ${song.title}`;
-          doc.text(title, margin, currentY + 10);
+          doc.text(title, margin, currentY + 8);
 
-          // Meta Info (Key / Tempo) - Right Aligned
-          const metaInfo = [];
-          if (song.key) metaInfo.push(`Key: ${song.key}`);
-          if (song.tempo) metaInfo.push(`${song.tempo} BPM`);
-          
-          if (metaInfo.length > 0) {
-             doc.setFontSize(12);
+          // 2. Meta Line (Artist, Key, Tempo) - Below Title
+          const metaParts = [];
+          if (pdfOptions.showArtist && song.artist) metaParts.push(song.artist);
+          if (pdfOptions.showKey && song.key) metaParts.push(`Key: ${song.key}`);
+          if (pdfOptions.showTempo && song.tempo) metaParts.push(`${song.tempo} BPM`);
+
+          if (metaParts.length > 0) {
+             doc.setFontSize(11);
              doc.setFont("helvetica", "normal");
-             doc.text(metaInfo.join("  •  "), pageWidth - margin, currentY + 10, { align: "right" });
+             doc.setTextColor(80);
+             doc.text(metaParts.join("  •  "), margin + 8, currentY + 15);
+             doc.setTextColor(0); // Reset
           }
 
-          // Artist
-          doc.setFontSize(12);
-          doc.setFont("helvetica", "italic");
-          doc.setTextColor(60);
-          doc.text(song.artist, margin + 8, currentY + 17);
-
-          // Note
-          if (song.note) {
+          // 3. Note - Right Aligned Column
+          if (pdfOptions.showNotes && song.note) {
              doc.setFontSize(10);
+             doc.setFont("helvetica", "italic");
              doc.setTextColor(100);
-             // handle note wrapping if too long
-             const splitNote = doc.splitTextToSize(`Note: ${song.note}`, contentWidth - 10);
-             doc.text(splitNote, margin + 8, currentY + 23);
+             
+             const noteWidth = 65; // dedicated column width on right
+             const noteX = pageWidth - margin;
+             
+             // Split text to fit width
+             const wrappedNote = doc.splitTextToSize(song.note, noteWidth);
+             
+             // Draw text right-aligned to the margin
+             doc.text(wrappedNote, noteX, currentY + 8, { align: "right" });
+             
+             doc.setTextColor(0); // Reset
           }
-          
-          doc.setTextColor(0); // Reset
         });
       }
     });
 
     doc.save(`${setlistData.setlist.name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}.pdf`);
+    setPdfConfigOpen(false);
   };
 
   // --- UI State ---
@@ -556,9 +568,70 @@ const SetlistDetail = () => {
               </div>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={generatePDF}>
-                <FileDown className="mr-2 h-4 w-4" /> Download PDF
-              </Button>
+              <Dialog open={pdfConfigOpen} onOpenChange={setPdfConfigOpen}>
+                <DialogTrigger asChild>
+                   <Button variant="outline">
+                      <FileDown className="mr-2 h-4 w-4" /> Download PDF
+                   </Button>
+                </DialogTrigger>
+                <DialogContent>
+                   <DialogHeader>
+                      <DialogTitle>PDF Export Settings</DialogTitle>
+                      <DialogDescription>Choose which information to include in your setlist PDF.</DialogDescription>
+                   </DialogHeader>
+                   <div className="space-y-4 py-4">
+                      <div className="flex items-center justify-between">
+                         <Label htmlFor="show-artist" className="flex flex-col">
+                            <span>Original Artist</span>
+                            <span className="text-xs font-normal text-muted-foreground">Show artist name below song title</span>
+                         </Label>
+                         <Switch 
+                            id="show-artist" 
+                            checked={pdfOptions.showArtist} 
+                            onCheckedChange={(c) => setPdfOptions(p => ({...p, showArtist: c}))} 
+                         />
+                      </div>
+                      <div className="flex items-center justify-between">
+                         <Label htmlFor="show-key" className="flex flex-col">
+                            <span>Key</span>
+                            <span className="text-xs font-normal text-muted-foreground">Include musical key</span>
+                         </Label>
+                         <Switch 
+                            id="show-key" 
+                            checked={pdfOptions.showKey} 
+                            onCheckedChange={(c) => setPdfOptions(p => ({...p, showKey: c}))} 
+                         />
+                      </div>
+                      <div className="flex items-center justify-between">
+                         <Label htmlFor="show-tempo" className="flex flex-col">
+                            <span>Tempo (BPM)</span>
+                            <span className="text-xs font-normal text-muted-foreground">Include beats per minute</span>
+                         </Label>
+                         <Switch 
+                            id="show-tempo" 
+                            checked={pdfOptions.showTempo} 
+                            onCheckedChange={(c) => setPdfOptions(p => ({...p, showTempo: c}))} 
+                         />
+                      </div>
+                      <div className="flex items-center justify-between">
+                         <Label htmlFor="show-notes" className="flex flex-col">
+                            <span>Performance Notes</span>
+                            <span className="text-xs font-normal text-muted-foreground">Show notes column on the right</span>
+                         </Label>
+                         <Switch 
+                            id="show-notes" 
+                            checked={pdfOptions.showNotes} 
+                            onCheckedChange={(c) => setPdfOptions(p => ({...p, showNotes: c}))} 
+                         />
+                      </div>
+                   </div>
+                   <DialogFooter>
+                      <Button onClick={generatePDF} className="w-full">
+                         <FileDown className="mr-2 h-4 w-4" /> Generate PDF
+                      </Button>
+                   </DialogFooter>
+                </DialogContent>
+              </Dialog>
               <Button onClick={() => addSet.mutate()}>
                 <Plus className="mr-2 h-4 w-4" /> Add Set
               </Button>
